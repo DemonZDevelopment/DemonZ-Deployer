@@ -1,0 +1,70 @@
+name: DemonZ Workspace Deployment Pipeline
+
+on:
+  push:
+    paths:
+      - 'workspace.zip'
+
+permissions:
+  contents: write
+
+env:
+  # Deployment Configuration
+  PAYLOAD_FILE: 'workspace.zip'
+  TARGET_DIR: '.'
+  
+  # Git Identity
+  BOT_NAME: 'DemonZ Deployer Bot'
+  BOT_EMAIL: 'deployer@demonz.dev'
+  
+  # Commit Structure
+  COMMIT_MSG: 'build(sync): update workspace via DemonZ Deployer'
+
+jobs:
+  extract-and-sync:
+    name: Extract Payload and Synchronize Workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify Payload Integrity
+        run: |
+          if [ ! -f "${{ env.PAYLOAD_FILE }}" ]; then
+            echo "Error: Payload file '${{ env.PAYLOAD_FILE }}' not found. Terminating."
+            exit 1
+          fi
+          echo "Payload located. Proceeding with extraction."
+
+      - name: Extract Workspace Payload
+        run: |
+          echo "Unpacking archive into directory: ${{ env.TARGET_DIR }}"
+          unzip -q -o ${{ env.PAYLOAD_FILE }} -d ${{ env.TARGET_DIR }}
+          
+          echo "Purging payload archive to maintain repository optimization."
+          rm ${{ env.PAYLOAD_FILE }}
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "${{ env.BOT_NAME }}"
+          git config --global user.email "${{ env.BOT_EMAIL }}"
+
+      - name: Commit and Push Synchronized Data
+        run: |
+          git add -A
+          
+          # Prevent failing the workflow if the zip contained identical files
+          if git diff-index --quiet HEAD --; then
+            echo "Status: No structural changes detected. Repository is fully synchronized."
+            exit 0
+          fi
+          
+          echo "Modifications detected. Executing commit sequence."
+          git commit -m "${{ env.COMMIT_MSG }}"
+          git push
+          
+          echo "Status: Synchronization sequence completed successfully."

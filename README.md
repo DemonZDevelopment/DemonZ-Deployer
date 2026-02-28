@@ -6,7 +6,7 @@
 
 # DemonZ Deployer
 
-**A serverless, zero-friction deployment engine to synchronize mobile development workspaces directly to GitHub.**
+**A serverless, zero-friction deployment engine engineered to synchronize mobile development workspaces directly to GitHub.**
 
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](#)
@@ -19,7 +19,7 @@
 
 ## System Overview
 
-Mobile development environments often generate thousands of individual files. Attempting to synchronize these local workspaces with remote version control via mobile web browsers introduces significant friction and payload limitations.
+Mobile development environments often generate thousands of individual files. Attempting to synchronize these local workspaces with remote version control via mobile web browsers introduces significant friction, payload limitations, and browser instability.
 
 DemonZ Deployer resolves this bottleneck using a hybrid serverless architecture. Instead of uploading files individually, developers transmit a single compressed workspace binary (`workspace.zip`) via a secure, client-side interface. This action triggers an automated CI/CD pipeline that unpacks, verifies, and commits the structural changes directly to the target repository in the background.
 
@@ -68,6 +68,38 @@ Deploying your workspace is completely frictionless. You do not need to install 
 * Open the official **[DemonZ Deployer Interface](https://demonzdevelopment.github.io/DemonZ-Deployer/)**.
 * Input your target repository identifier (e.g., `DemonZDevelopment/my-app`) and your Personal Access Token.
 * Upload your `workspace.zip` into the UI. The pipeline will automatically handle the extraction and synchronization.
+
+## Access Token Generation
+
+DemonZ Deployer requires a GitHub Personal Access Token (PAT) with repository write access to transmit payloads securely via the API. 
+
+**Generating a Fine-Grained Token (Recommended for Security):**
+1. Navigate to your GitHub profile settings.
+2. Select **Developer settings** > **Personal access tokens** > **Fine-grained tokens**.
+3. Click **Generate new token**.
+4. Assign a strict naming convention (e.g., `DemonZ-Deployer-Access`) and set an expiration date.
+5. Under **Repository access**, select **Only select repositories** and choose your specific target workspace.
+6. Under **Repository permissions**, grant **Read and write** access to **Contents**.
+7. Generate the token and store it securely.
+
+**Generating a Classic Token:**
+If utilizing a Classic Token instead of Fine-Grained, ensure the overarching `repo` scope is checked during generation.
+
+## Troubleshooting & Diagnostics
+
+If the deployment sequence fails, consult the terminal logs in the UI and reference the solutions below.
+
+**HTTP 401 / Bad Credentials:**
+The Personal Access Token provided is invalid, expired, or was copied incorrectly. Regenerate the token following the steps above and update your client-side credentials.
+
+**HTTP 404 / Repository Not Found:**
+The target repository format is incorrect, or your token lacks permission to view the repository. Ensure the target format is exactly `OwnerName/RepositoryName` (e.g., `DemonZDevelopment/my-app`) and verify your token scopes.
+
+**Payload Transmitted but Pipeline Fails to Trigger:**
+Ensure the `deployer-pipeline.yml` file is located exactly within the `.github/workflows/` directory on the default branch of your target repository. GitHub Actions will not monitor for the `workspace.zip` push event if the workflow file is misplaced.
+
+**Workflow Fails During Commit Phase:**
+If the GitHub Action successfully extracts the payload but fails to push the new commit, the repository's bot permissions are restricted. Navigate to the target repository **Settings** > **Actions** > **General** > **Workflow permissions**, and ensure **Read and write permissions** is actively selected.
 
 ## Security Notice
 

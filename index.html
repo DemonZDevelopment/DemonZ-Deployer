@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DemonZ Deployer — Serverless Workspace Sync</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Fira+Code:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #07070f;
+      --bg2:         #0d0d1a;
+      --surface:     rgba(255,255,255,0.028);
+      --surface-hov: rgba(255,255,255,0.05);
+      --border:      rgba(255,255,255,0.07);
+      --border-hov:  rgba(255,255,255,0.14);
+      --orange:      #ff7b2f;
+      --orange-dim:  rgba(255,123,47,0.15);
+      --purple:      #c061ff;
+      --purple-dim:  rgba(192,97,255,0.12);
+      --text:        #ddddf0;
+      --text-dim:    #7070a0;
+      --success:     #3de89e;
+      --error:       #ff4f6a;
+      --warn:        #ffd166;
+      --mono:        'Fira Code', monospace;
+      --sans:        'Space Grotesk', system-ui, sans-serif;
+      --radius:      14px;
+      --radius-sm:   8px;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+
+    /* ── Background ── */
+    .bg-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .bg-canvas::before {
+      content: ''; position: absolute; inset: 0;
+      background-image: radial-gradient(rgba(192,97,255,0.055) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    .orb { position: absolute; border-radius: 50%; filter: blur(80px); animation: drift 18s ease-in-out infinite alternate; }
+    .orb-1 { width: 700px; height: 700px; top: -250px; right: -200px; background: radial-gradient(circle, rgba(192,97,255,0.13), transparent 65%); animation-duration: 22s; }
+    .orb-2 { width: 500px; height: 500px; bottom: -150px; left: -100px; background: radial-gradient(circle, rgba(255,123,47,0.1), transparent 65%); animation-duration: 16s; animation-direction: alternate-reverse; }
+    .orb-3 { width: 280px; height: 280px; top: 45%; left: 32%; background: radial-gradient(circle, rgba(192,97,255,0.06), transparent 65%); animation-duration: 26s; }
+
+    @keyframes drift {
+      0%   { transform: translate(0,0) scale(1); }
+      50%  { transform: translate(28px,-18px) scale(1.04); }
+      100% { transform: translate(-14px,22px) scale(0.97); }
+    }
+
+    /* ── App wrapper ── */
+    .app { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; max-width: 900px; margin: 0 auto; padding: 0 28px 60px; }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 36px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+
+    .logo-group { display: flex; align-items: center; gap: 14px; }
+
+    .logo-icon-wrap {
+      width: 44px; height: 44px; border-radius: 11px;
+      background: linear-gradient(135deg, rgba(255,123,47,0.15), rgba(192,97,255,0.15));
+      border: 1px solid rgba(255,123,47,0.25);
+      display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+      box-shadow: 0 0 20px rgba(255,123,47,0.15);
+    }
+    .logo-icon-wrap::after {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 50%;
+      background: linear-gradient(to bottom, rgba(255,255,255,0.07), transparent);
+      pointer-events: none;
+    }
+
+    .logo-text-wrap { display: flex; flex-direction: column; gap: 3px; }
+    .logo-title { font-size: 1.22rem; font-weight: 700; letter-spacing: -0.02em; color: #fff; line-height: 1; }
+    .logo-title .brand { background: linear-gradient(100deg, var(--orange), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .logo-sub { font-size: 0.63rem; letter-spacing: 0.17em; text-transform: uppercase; color: var(--text-dim); font-family: var(--mono); }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .hpill {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 30px;
+      font-family: var(--mono); font-size: 0.67rem; color: var(--text-dim);
+    }
+    .hpill svg { width: 11px; height: 11px; flex-shrink: 0; }
+    .hpill.live { border-color: rgba(61,232,158,0.3); color: var(--success); }
+    .hpill.error-s { border-color: rgba(255,79,106,0.3); color: var(--error); }
+
+    .live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success); animation: blink 1.5s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Info strip ── */
+    .strip { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 16px; }
+
+    .icard {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px;
+      display: flex; align-items: center; gap: 13px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .icard:hover { border-color: var(--border-hov); background: var(--surface-hov); }
+
+    .icard-icon {
+      width: 36px; height: 36px; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .icard-icon svg { width: 16px; height: 16px; }
+    .icard-icon.o { background: rgba(255,123,47,0.12); color: var(--orange); }
+    .icard-icon.p { background: rgba(192,97,255,0.12); color: var(--purple); }
+    .icard-icon.g { background: rgba(61,232,158,0.12); color: var(--success); }
+
+    .icard-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .icard-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.13em; color: var(--text-dim); font-family: var(--mono); }
+    .icard-val { font-size: 0.8rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Panel ── */
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px 26px;
+      transition: border-color 0.2s; margin-bottom: 14px;
+    }
+    .panel:hover { border-color: var(--border-hov); }
+
+    .panel-head {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 20px; padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .ph-icon {
+      width: 28px; height: 28px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ph-icon svg { width: 13px; height: 13px; }
+    .ph-icon.o { background: rgba(255,123,47,0.12); color: var(--orange); }
+    .ph-icon.p { background: rgba(192,97,255,0.12); color: var(--purple); }
+    .ph-icon.g { background: rgba(61,232,158,0.12); color: var(--success); }
+
+    .ph-title { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+    .ph-meta { font-family: var(--mono); font-size: 0.63rem; color: var(--text-dim); margin-left: auto; }
+
+    /* ── Fields ── */
+    .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 580px) { .fields { grid-template-columns: 1fr; } .strip { grid-template-columns: 1fr; } }
+
+    .field { display: flex; flex-direction: column; gap: 7px; }
+    .field-label {
+      font-family: var(--mono); font-size: 0.64rem;
+      text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .field-label svg { width: 10px; height: 10px; opacity: 0.7; }
+
+    .inp-wrap { position: relative; }
+    .inp-ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
+    .inp-ico svg { width: 14px; height: 14px; display: block; }
+
+    .field input {
+      width: 100%; background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 11px 14px 11px 38px;
+      color: var(--text); font-family: var(--mono); font-size: 0.78rem;
+      outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .field input::placeholder { color: rgba(112,112,160,0.5); }
+    .field input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(255,123,47,0.1); }
+
+    .field-hint { font-family: var(--mono); font-size: 0.62rem; color: var(--text-dim); display: flex; align-items: center; gap: 4px; }
+    .field-hint svg { width: 10px; height: 10px; flex-shrink: 0; }
+
+    /* ── Dropzone ── */
+    .dropzone {
+      border: 1.5px dashed rgba(255,255,255,0.1);
+      border-radius: var(--radius); padding: 50px 28px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 13px; cursor: pointer; text-align: center; position: relative;
+      overflow: hidden; transition: all 0.25s;
+    }
+    .dropzone::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 50% 100%, rgba(192,97,255,0.06), transparent 70%);
+      pointer-events: none; opacity: 0; transition: opacity 0.3s;
+    }
+    .dropzone:hover, .dropzone.dragover { border-color: var(--purple); background: rgba(192,97,255,0.03); }
+    .dropzone:hover::before, .dropzone.dragover::before { opacity: 1; }
+    .dropzone.has-file { border-color: var(--success); border-style: solid; background: rgba(61,232,158,0.025); }
+    .dropzone.has-file::before { opacity: 0; }
+    .dropzone.file-err { border-color: var(--error); border-style: solid; background: rgba(255,79,106,0.025); }
+
+    .dz-ring {
+      width: 72px; height: 72px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.08);
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.3); transition: all 0.3s; position: relative;
+    }
+    .dz-ring::after {
+      content: ''; position: absolute; inset: -5px; border-radius: 50%;
+      border: 1px dashed rgba(255,255,255,0.05); transition: all 0.3s;
+    }
+    .dz-ring svg { width: 28px; height: 28px; color: var(--text-dim); transition: color 0.3s; }
+
+    .dropzone:hover .dz-ring, .dropzone.dragover .dz-ring { border-color: rgba(192,97,255,0.4); box-shadow: 0 0 24px rgba(192,97,255,0.2); }
+    .dropzone:hover .dz-ring svg, .dropzone.dragover .dz-ring svg { color: var(--purple); }
+    .dropzone:hover .dz-ring::after, .dropzone.dragover .dz-ring::after { border-color: rgba(192,97,255,0.2); }
+
+    .dropzone.has-file .dz-ring { border-color: rgba(61,232,158,0.4); box-shadow: 0 0 24px rgba(61,232,158,0.15); }
+    .dropzone.has-file .dz-ring svg { color: var(--success); }
+    .dropzone.file-err .dz-ring { border-color: rgba(255,79,106,0.4); }
+    .dropzone.file-err .dz-ring svg { color: var(--error); }
+
+    .dz-title { font-size: 0.95rem; font-weight: 600; color: var(--text); }
+    .dz-sub { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); max-width: 300px; }
+
+    .dz-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 13px; background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border); border-radius: 20px;
+      font-family: var(--mono); font-size: 0.63rem; color: var(--text-dim);
+    }
+    .dz-chip svg { width: 10px; height: 10px; }
+
+    .dz-file-block { display: none; flex-direction: column; align-items: center; gap: 5px; }
+    .dz-file-name { font-family: var(--mono); font-size: 0.82rem; color: var(--success); font-weight: 500; }
+    .dz-file-meta { font-family: var(--mono); font-size: 0.65rem; color: var(--text-dim); }
+
+    .dropzone.has-file .dz-default { display: none; }
+    .dropzone.has-file .dz-file-block { display: flex; }
+    .dropzone.file-err .dz-file-block { display: none; }
+    .dz-default { display: contents; }
+
+    #fileInput { display: none; }
+
+    /* ── Progress ── */
+    .prog-row { display: none; align-items: center; gap: 12px; margin-top: 14px; }
+    .prog-row.show { display: flex; }
+    .prog-track { flex: 1; height: 3px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; }
+    .prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--purple), var(--orange)); border-radius: 3px; transition: width 0.45s ease; }
+    .prog-label { font-family: var(--mono); font-size: 0.64rem; color: var(--text-dim); width: 32px; text-align: right; }
+
+    /* ── Pipeline ── */
+    .pipeline {
+      display: flex; align-items: center;
+      padding: 14px 16px; margin-top: 18px;
+      background: rgba(0,0,0,0.25); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); gap: 0; overflow-x: auto;
+    }
+    .pipe-step { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 72px; }
+    .pipe-step-icon {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 1.5px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.3); transition: all 0.3s;
+    }
+    .pipe-step-icon svg { width: 13px; height: 13px; color: var(--text-dim); transition: color 0.3s; }
+    .pipe-step-label { font-family: var(--mono); font-size: 0.59rem; color: var(--text-dim); text-align: center; line-height: 1.3; transition: color 0.3s; }
+    .pipe-conn { flex: 0.4; height: 1px; background: var(--border); margin-bottom: 18px; transition: background 0.3s, box-shadow 0.3s; }
+
+    .pipe-step.active .pipe-step-icon { border-color: var(--orange); background: rgba(255,123,47,0.1); box-shadow: 0 0 14px rgba(255,123,47,0.25); }
+    .pipe-step.active .pipe-step-icon svg { color: var(--orange); }
+    .pipe-step.active .pipe-step-label { color: var(--orange); }
+
+    .pipe-step.done .pipe-step-icon { border-color: var(--success); background: rgba(61,232,158,0.1); }
+    .pipe-step.done .pipe-step-icon svg { color: var(--success); }
+    .pipe-step.done .pipe-step-label { color: var(--success); }
+
+    .pipe-step.err .pipe-step-icon { border-color: var(--error); background: rgba(255,79,106,0.1); }
+    .pipe-step.err .pipe-step-icon svg { color: var(--error); }
+    .pipe-step.err .pipe-step-label { color: var(--error); }
+
+    .pipe-conn.done { background: var(--success); box-shadow: 0 0 5px rgba(61,232,158,0.4); }
+
+    /* ── Buttons ── */
+    .btn-row { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; gap: 10px; }
+
+    .btn-sec {
+      display: flex; align-items: center; gap: 6px;
+      font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+      color: var(--text-dim); background: transparent;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 10px 16px; cursor: pointer; transition: all 0.18s;
+    }
+    .btn-sec svg { width: 13px; height: 13px; }
+    .btn-sec:hover { border-color: var(--border-hov); color: var(--text); background: var(--surface-hov); }
+
+    .btn-primary {
+      display: flex; align-items: center; gap: 9px;
+      font-family: var(--sans); font-size: 0.84rem; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: #fff; border: none; border-radius: var(--radius-sm);
+      padding: 13px 32px; cursor: pointer; position: relative; overflow: hidden;
+      background: linear-gradient(130deg, #ff7b2f 0%, #c061ff 100%);
+      box-shadow: 0 0 28px rgba(192,97,255,0.35);
+      transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+    }
+    .btn-primary::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.13), transparent 60%);
+      pointer-events: none;
+    }
+    .btn-primary::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    }
+    .btn-primary svg { width: 16px; height: 16px; }
+    .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 48px rgba(192,97,255,0.5); }
+    .btn-primary:active:not(:disabled) { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; }
+
+    .btn-spinner { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; animation: spin 0.65s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .is-deploying .btn-spinner { display: block; }
+    .is-deploying .deploy-icon { display: none; }
+
+    /* ── Terminal ── */
+    .terminal-outer { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #03030a; }
+
+    .term-bar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 16px; border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.018);
+    }
+    .mac-dots { display: flex; gap: 6px; }
+    .mac-dot { width: 11px; height: 11px; border-radius: 50%; }
+    .mac-dot:nth-child(1) { background: #ff5f57; }
+    .mac-dot:nth-child(2) { background: #febc2e; }
+    .mac-dot:nth-child(3) { background: #28c840; }
+
+    .term-title { font-family: var(--mono); font-size: 0.67rem; color: var(--text-dim); flex: 1; text-align: center; }
+    .term-acts { display: flex; gap: 6px; }
+    .term-act {
+      width: 22px; height: 22px; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; border: 1px solid var(--border);
+      color: var(--text-dim); background: transparent; transition: all 0.15s;
+    }
+    .term-act:hover { border-color: var(--border-hov); color: var(--text); background: var(--surface-hov); }
+    .term-act svg { width: 11px; height: 11px; }
+
+    .term-body {
+      padding: 18px 22px; min-height: 200px; max-height: 300px;
+      overflow-y: auto; font-family: var(--mono); font-size: 0.75rem; line-height: 1.95;
+    }
+    .term-body::-webkit-scrollbar { width: 3px; }
+    .term-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
+
+    .log { display: flex; align-items: flex-start; gap: 10px; animation: li 0.18s ease; }
+    @keyframes li { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    .log-ts { color: rgba(112,112,160,0.45); font-size: 0.63rem; flex-shrink: 0; padding-top: 1px; }
+    .log-sym { flex-shrink: 0; color: var(--purple); user-select: none; }
+    .log-txt { flex: 1; }
+
+    .log.info .log-txt    { color: var(--text); }
+    .log.success .log-txt { color: var(--success); }
+    .log.error .log-txt   { color: var(--error); }
+    .log.warn .log-txt    { color: var(--warn); }
+    .log.dim .log-txt     { color: var(--text-dim); }
+    .log.sys .log-txt     { color: rgba(192,97,255,0.8); }
+
+    .log-tag {
+      display: inline-block; font-size: 0.57rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 1px 6px; border-radius: 3px; margin-right: 7px; vertical-align: middle;
+    }
+    .log-tag.ok  { background: rgba(61,232,158,0.15);  color: var(--success); }
+    .log-tag.er  { background: rgba(255,79,106,0.15);  color: var(--error); }
+    .log-tag.in  { background: rgba(192,97,255,0.15);  color: var(--purple); }
+    .log-tag.wn  { background: rgba(255,209,102,0.15); color: var(--warn); }
+
+    .term-cursor {
+      display: inline-block; width: 7px; height: 12px;
+      background: var(--purple); vertical-align: middle;
+      margin-left: 3px; animation: blink 1s step-end infinite; border-radius: 1px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    .foot-brand { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; color: var(--text-dim); }
+    .foot-brand svg { width: 13px; height: 13px; color: var(--orange); }
+    .foot-brand strong { color: var(--text); }
+
+    .foot-links { display: flex; align-items: center; gap: 16px; }
+    .foot-link {
+      display: flex; align-items: center; gap: 5px;
+      font-family: var(--mono); font-size: 0.67rem; color: var(--text-dim);
+      text-decoration: none; transition: color 0.15s;
+    }
+    .foot-link svg { width: 11px; height: 11px; }
+    .foot-link:hover { color: var(--orange); }
+  </style>
+</head>
+<body>
+
+  <div class="bg-canvas">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="app">
+
+    <!-- HEADER -->
+    <header>
+      <div class="logo-group">
+        <div class="logo-icon-wrap">
+          <i data-lucide="zap" style="width:20px;height:20px;color:#ff7b2f;"></i>
+        </div>
+        <div class="logo-text-wrap">
+          <div class="logo-title"><span class="brand">DemonZ</span> Deployer</div>
+          <div class="logo-sub">Serverless Workspace Sync Engine</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="hpill">
+          <i data-lucide="github"></i>
+          GitHub API v3
+        </div>
+        <div class="hpill live" id="statusPill">
+          <div class="live-dot" id="liveDot"></div>
+          <span id="statusLabel">Idle</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- INFO CARDS -->
+    <div class="strip">
+      <div class="icard">
+        <div class="icard-icon o"><i data-lucide="server-off"></i></div>
+        <div class="icard-body">
+          <div class="icard-label">Architecture</div>
+          <div class="icard-val">Zero-Server</div>
+        </div>
+      </div>
+      <div class="icard">
+        <div class="icard-icon p"><i data-lucide="shield-check"></i></div>
+        <div class="icard-body">
+          <div class="icard-label">Security</div>
+          <div class="icard-val">Client-Side PAT Only</div>
+        </div>
+      </div>
+      <div class="icard">
+        <div class="icard-icon g"><i data-lucide="git-branch-plus"></i></div>
+        <div class="icard-body">
+          <div class="icard-label">Pipeline</div>
+          <div class="icard-val">Actions Auto-Extract</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CREDENTIALS -->
+    <div class="panel">
+      <div class="panel-head">
+        <div class="ph-icon o"><i data-lucide="key-round"></i></div>
+        <span class="ph-title">Target Configuration</span>
+        <span class="ph-meta">saved to localStorage</span>
+      </div>
+      <div class="fields">
+        <div class="field">
+          <div class="field-label"><i data-lucide="git-fork"></i> Target Repository</div>
+          <div class="inp-wrap">
+            <div class="inp-ico"><i data-lucide="github"></i></div>
+            <input type="text" id="repo" placeholder="username/repository" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="field-hint"><i data-lucide="circle-dot"></i> Format: DemonZDevelopment/my-app</div>
+        </div>
+        <div class="field">
+          <div class="field-label"><i data-lucide="lock"></i> GitHub Personal Access Token</div>
+          <div class="inp-wrap">
+            <div class="inp-ico"><i data-lucide="key"></i></div>
+            <input type="password" id="token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+          </div>
+          <div class="field-hint"><i data-lucide="circle-dot"></i> Requires repo write permissions</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ARTIFACT UPLOAD -->
+    <div class="panel">
+      <div class="panel-head">
+        <div class="ph-icon p"><i data-lucide="package"></i></div>
+        <span class="ph-title">Deployment Artifact</span>
+        <span class="ph-meta">workspace.zip only</span>
+      </div>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload workspace.zip">
+        <div class="dz-ring">
+          <i data-lucide="upload-cloud"></i>
+        </div>
+        <div class="dz-default">
+          <div class="dz-title">Drop workspace.zip here</div>
+          <div class="dz-sub">Click to browse, or drag and drop your compressed workspace archive</div>
+          <div class="dz-chip">
+            <i data-lucide="file-archive"></i>
+            .zip files only accepted
+          </div>
+        </div>
+        <div class="dz-file-block" id="dzFileBlock">
+          <div class="dz-file-name" id="dzFileName"></div>
+          <div class="dz-file-meta" id="dzFileMeta"></div>
+        </div>
+        <input type="file" id="fileInput" accept=".zip" />
+      </div>
+
+      <div class="prog-row" id="progRow">
+        <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+        <div class="prog-label" id="progLabel">0%</div>
+      </div>
+
+      <!-- Pipeline steps -->
+      <div class="pipeline">
+        <div class="pipe-step" id="ps-auth">
+          <div class="pipe-step-icon"><i data-lucide="fingerprint"></i></div>
+          <div class="pipe-step-label">Auth</div>
+        </div>
+        <div class="pipe-conn" id="pc-1"></div>
+        <div class="pipe-step" id="ps-encode">
+          <div class="pipe-step-icon"><i data-lucide="binary"></i></div>
+          <div class="pipe-step-label">Encode</div>
+        </div>
+        <div class="pipe-conn" id="pc-2"></div>
+        <div class="pipe-step" id="ps-check">
+          <div class="pipe-step-icon"><i data-lucide="search-check"></i></div>
+          <div class="pipe-step-label">SHA Check</div>
+        </div>
+        <div class="pipe-conn" id="pc-3"></div>
+        <div class="pipe-step" id="ps-upload">
+          <div class="pipe-step-icon"><i data-lucide="send-horizontal"></i></div>
+          <div class="pipe-step-label">Upload</div>
+        </div>
+        <div class="pipe-conn" id="pc-4"></div>
+        <div class="pipe-step" id="ps-done">
+          <div class="pipe-step-icon"><i data-lucide="circle-check-big"></i></div>
+          <div class="pipe-step-label">Deployed</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-sec" id="clearBtn"><i data-lucide="x"></i> Clear</button>
+        <button class="btn-primary" id="deployBtn" disabled>
+          <div class="btn-spinner" id="spinner"></div>
+          <i data-lucide="rocket" class="deploy-icon"></i>
+          <span id="deployLabel">Deploy Workspace</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- TERMINAL -->
+    <div class="terminal-outer">
+      <div class="term-bar">
+        <div class="mac-dots"><div class="mac-dot"></div><div class="mac-dot"></div><div class="mac-dot"></div></div>
+        <div class="term-title">deploy.log — DemonZ Deployer</div>
+        <div class="term-acts">
+          <button class="term-act" id="clearTermBtn" title="Clear terminal"><i data-lucide="eraser"></i></button>
+        </div>
+      </div>
+      <div class="term-body" id="terminal"></div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+      <div class="foot-brand">
+        <i data-lucide="zap"></i>
+        Engineered by <strong>DemonZ Development</strong> &mdash; MIT License
+      </div>
+      <div class="foot-links">
+        <a href="https://github.com/DemonZDevelopment/DemonZ-Deployer" target="_blank" class="foot-link">
+          <i data-lucide="github"></i> Repository
+        </a>
+        <a href="https://github.com/DemonZDevelopment/DemonZ-Deployer/blob/main/.github/workflows/deployer-pipeline.yml" target="_blank" class="foot-link">
+          <i data-lucide="workflow"></i> Pipeline
+        </a>
+        <a href="https://github.com/DemonZDevelopment/DemonZ-Deployer/blob/main/README.md" target="_blank" class="foot-link">
+          <i data-lucide="book-open"></i> Docs
+        </a>
+        <a href="https://demonzdevelopment.github.io/DemonZ-Deployer/" target="_blank" class="foot-link">
+          <i data-lucide="globe"></i> Live
+        </a>
+      </div>
+    </footer>
+
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      // Init Lucide icons
+      lucide.createIcons();
+
+      /* ── DOM refs ── */
+      const repoInput    = document.getElementById('repo');
+      const tokenInput   = document.getElementById('token');
+      const dropzone     = document.getElementById('dropzone');
+      const fileInput    = document.getElementById('fileInput');
+      const dzFileName   = document.getElementById('dzFileName');
+      const dzFileMeta   = document.getElementById('dzFileMeta');
+      const dzFileBlock  = document.getElementById('dzFileBlock');
+      const deployBtn    = document.getElementById('deployBtn');
+      const deployLabel  = document.getElementById('deployLabel');
+      const clearBtn     = document.getElementById('clearBtn');
+      const terminal     = document.getElementById('terminal');
+      const clearTermBtn = document.getElementById('clearTermBtn');
+      const statusLabel  = document.getElementById('statusLabel');
+      const statusPill   = document.getElementById('statusPill');
+      const liveDot      = document.getElementById('liveDot');
+      const progRow      = document.getElementById('progRow');
+      const progFill     = document.getElementById('progFill');
+      const progLabel    = document.getElementById('progLabel');
+      const spinner      = document.getElementById('spinner');
+
+      let selectedFile = null;
+      let cursorEl     = null;
+
+      /* ── LocalStorage credentials ── */
+      repoInput.value  = localStorage.getItem('dz_repo')  || '';
+      tokenInput.value = localStorage.getItem('dz_token') || '';
+
+      repoInput.addEventListener('input',  () => { localStorage.setItem('dz_repo',  repoInput.value.trim());  checkReady(); });
+      tokenInput.addEventListener('input', () => { localStorage.setItem('dz_token', tokenInput.value.trim()); checkReady(); });
+
+      /* ── Terminal ── */
+      function ts() {
+        const d = new Date();
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      }
+      function pad(n) { return String(n).padStart(2,'0'); }
+
+      function appendCursor() {
+        cursorEl = document.createElement('span');
+        cursorEl.className = 'term-cursor';
+        terminal.appendChild(cursorEl);
+      }
+
+      function log(msg, type = 'info', tag = null) {
+        if (cursorEl) cursorEl.remove();
+        const line = document.createElement('div');
+        line.className = `log ${type}`;
+        let tagHtml = '';
+        if (tag) {
+          const map = { ok: 'ok', er: 'er', in: 'in', wn: 'wn' };
+          const labels = { ok: 'OK', er: 'ERR', in: 'INF', wn: 'WRN' };
+          tagHtml = `<span class="log-tag ${map[tag]}">${labels[tag]}</span>`;
+        }
+        line.innerHTML = `
+          <span class="log-ts">${ts()}</span>
+          <span class="log-sym">&rsaquo;</span>
+          <span class="log-txt">${tagHtml}${esc(msg)}</span>
+        `;
+        terminal.appendChild(line);
+        appendCursor();
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+
+      function esc(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+
+      /* ── Status ── */
+      function setStatus(label, state) {
+        statusLabel.textContent = label;
+        if (state === 'live') {
+          statusPill.className = 'hpill live';
+          liveDot.style.background = 'var(--success)';
+          liveDot.style.boxShadow  = '0 0 6px var(--success)';
+        } else if (state === 'error') {
+          statusPill.className = 'hpill error-s';
+          liveDot.style.background = 'var(--error)';
+          liveDot.style.boxShadow  = '0 0 6px var(--error)';
+        } else {
+          statusPill.className = 'hpill';
+          liveDot.style.background = 'var(--text-dim)';
+          liveDot.style.boxShadow  = 'none';
+        }
+      }
+
+      /* ── Progress ── */
+      function setProg(pct) {
+        if (pct === null) { progRow.classList.remove('show'); return; }
+        progRow.classList.add('show');
+        progFill.style.width = pct + '%';
+        progLabel.textContent = pct + '%';
+      }
+
+      /* ── Pipeline ── */
+      const pipeIds = ['auth','encode','check','upload','done'];
+      function pStep(id, state) {
+        const el = document.getElementById('ps-' + id);
+        if (el) { el.className = 'pipe-step' + (state ? ' ' + state : ''); }
+      }
+      function pConn(n, done) {
+        const el = document.getElementById('pc-' + n);
+        if (el) el.className = 'pipe-conn' + (done ? ' done' : '');
+      }
+      function resetPipe() { pipeIds.forEach(id => pStep(id,'')); [1,2,3,4].forEach(n => pConn(n,false)); }
+
+      /* ── Deploy button state ── */
+      function setBusy(busy) {
+        deployBtn.disabled = busy;
+        spinner.style.display = busy ? 'block' : 'none';
+        const icon = deployBtn.querySelector('.deploy-icon');
+        if (icon) icon.style.display = busy ? 'none' : '';
+        deployLabel.textContent = busy ? 'Deploying...' : 'Deploy Workspace';
+        if (busy) deployBtn.classList.add('is-deploying');
+        else deployBtn.classList.remove('is-deploying');
+      }
+
+      /* ── Ready check ── */
+      function checkReady() {
+        deployBtn.disabled = !(repoInput.value.trim() && tokenInput.value.trim() && selectedFile);
+      }
+
+      /* ── Clear ── */
+      clearBtn.addEventListener('click', () => {
+        selectedFile = null;
+        fileInput.value = '';
+        dropzone.className = 'dropzone';
+        dzFileName.textContent = '';
+        dzFileMeta.textContent = '';
+        setProg(null);
+        resetPipe();
+        setStatus('Idle', '');
+        checkReady();
+        log('Session cleared.', 'dim');
+      });
+
+      clearTermBtn.addEventListener('click', () => {
+        terminal.innerHTML = '';
+        appendCursor();
+        log('Terminal cleared.', 'sys');
+      });
+
+      /* ── File handling ── */
+      dropzone.addEventListener('click', () => fileInput.click());
+      dropzone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+      dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+      dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+      dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); });
+      fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+      function handleFile(file) {
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith('.zip')) {
+          dropzone.className = 'dropzone file-err';
+          selectedFile = null;
+          log(`Rejected "${file.name}" — only .zip artifacts accepted.`, 'error', 'er');
+          checkReady();
+          return;
+        }
+        dropzone.className = 'dropzone has-file';
+        selectedFile = file;
+        dzFileName.textContent = file.name;
+        dzFileMeta.textContent = `${fmtBytes(file.size)} · application/zip`;
+        log(`Artifact staged: ${file.name} (${fmtBytes(file.size)})`, 'success', 'ok');
+        checkReady();
+      }
+
+      function fmtBytes(b) {
+        if (b < 1024)    return b + ' B';
+        if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+        return (b / 1048576).toFixed(2) + ' MB';
+      }
+
+      /* ── Deploy ── */
+      deployBtn.addEventListener('click', deploy);
+
+      async function deploy() {
+        const repo  = repoInput.value.trim();
+        const token = tokenInput.value.trim();
+        if (!repo || !token || !selectedFile) return;
+
+        setBusy(true);
+        resetPipe();
+        setStatus('Deploying', 'live');
+        setProg(5);
+        log(`Initiating deployment to ${repo}`, 'sys', 'in');
+
+        /* 1 — Authenticate + Encode */
+        pStep('auth', 'active');
+        let b64;
+        try {
+          log('Encoding artifact to Base64...', 'info');
+          b64 = await readB64(selectedFile);
+          pStep('auth', 'done'); pConn(1, true);
+          pStep('encode', 'active');
+          setProg(22);
+          log('Base64 encoding complete.', 'success', 'ok');
+          pStep('encode', 'done'); pConn(2, true);
+        } catch (err) {
+          pStep('auth', 'err');
+          log(`Encoding failed: ${err.message}`, 'error', 'er');
+          finish(false); return;
+        }
+
+        /* 2 — SHA Check */
+        pStep('check', 'active');
+        setProg(40);
+        const apiUrl = `https://api.github.com/repos/${repo}/contents/workspace.zip`;
+        let sha = null;
+
+        try {
+          log(`Querying ${repo} for existing workspace.zip...`, 'info');
+          const res = await fetch(apiUrl, {
+            headers: { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' }
+          });
+          if (res.status === 200) {
+            const data = await res.json();
+            sha = data.sha;
+            log(`Existing file found. SHA: ${sha.slice(0,14)}... Overwrite mode.`, 'warn', 'wn');
+          } else if (res.status === 404) {
+            log('No existing workspace.zip. A new file will be created.', 'info', 'in');
+          } else {
+            const e = await res.json().catch(() => ({}));
+            throw new Error(`HTTP ${res.status}: ${e.message || res.statusText}`);
+          }
+          pStep('check', 'done'); pConn(3, true);
+        } catch (err) {
+          pStep('check', 'err');
+          log(`Repository check failed: ${err.message}`, 'error', 'er');
+          finish(false); return;
+        }
+
+        /* 3 — Upload */
+        pStep('upload', 'active');
+        setProg(65);
+
+        try {
+          log('Transmitting payload via GitHub API PUT...', 'info');
+          const body = {
+            message: 'chore: deploy workspace.zip via DemonZ Deployer',
+            content: b64
+          };
+          if (sha) body.sha = sha;
+
+          const res = await fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `token ${token}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+          });
+
+          setProg(90);
+
+          if (res.status === 200 || res.status === 201) {
+            const result = await res.json();
+            const verb = res.status === 201 ? 'Created' : 'Updated';
+            log(`${verb} workspace.zip. Commit: ${result.commit?.sha?.slice(0,14) || 'n/a'}`, 'success', 'ok');
+            log('Deployment complete. GitHub Actions pipeline will extract workspace.', 'success', 'ok');
+            pStep('upload', 'done'); pConn(4, true);
+            pStep('done', 'done');
+            setProg(100);
+            finish(true);
+          } else {
+            const e = await res.json().catch(() => ({}));
+            throw new Error(`HTTP ${res.status}: ${e.message || res.statusText}`);
+          }
+        } catch (err) {
+          pStep('upload', 'err');
+          log(`Upload failed: ${err.message}`, 'error', 'er');
+          finish(false);
+        }
+      }
+
+      function finish(ok) {
+        setTimeout(() => setProg(null), 1500);
+        setStatus(ok ? 'Complete' : 'Failed', ok ? 'live' : 'error');
+        setBusy(false);
+        if (!ok) log('Deployment terminated. Verify credentials and repo permissions.', 'dim');
+      }
+
+      function readB64(file) {
+        return new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload  = () => resolve(r.result.split(',')[1]);
+          r.onerror = () => reject(new Error('FileReader error'));
+          r.readAsDataURL(file);
+        });
+      }
+
+      /* ── Init ── */
+      checkReady();
+      appendCursor();
+      log('DemonZ Deployer ready. Tokens are stored locally and never leave your browser.', 'sys', 'in');
+      log('Configure your target repository and upload workspace.zip to begin.', 'dim');
+    })();
+  </script>
+</body>
+</html>

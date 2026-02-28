@@ -101,6 +101,13 @@ Ensure the `deployer-pipeline.yml` file is located exactly within the `.github/w
 **Workflow Fails During Commit Phase:**
 If the GitHub Action successfully extracts the payload but fails to push the new commit, the repository's bot permissions are restricted. Navigate to the target repository **Settings** > **Actions** > **General** > **Workflow permissions**, and ensure **Read and write permissions** is actively selected.
 
+## Community & Contributions
+
+DemonZ Development actively welcomes community collaboration. We have established standard guidelines to ensure a professional and organized development environment.
+
+* **[Contribution Guidelines](./CONTRIBUTING.md)**: Review our architectural standards and commit messaging rules before submitting pull requests.
+* **Issue Tracking**: We utilize standardized templates for tracking bugs and feature requests. Please navigate to the **Issues** tab and select the appropriate template to report diagnostic data or suggest structural enhancements.
+* 
 ## Security Notice
 
 This application operates exclusively as a static, client-side interface. Personal Access Tokens provided to the application are utilized strictly for authorizing requests to the official GitHub API. DemonZ Development does not collect, proxy, transmit, or store user credentials or repository telemetry.

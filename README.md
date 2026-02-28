@@ -107,7 +107,7 @@ DemonZ Development actively welcomes community collaboration. We have establishe
 
 * **[Contribution Guidelines](./CONTRIBUTING.md)**: Review our architectural standards and commit messaging rules before submitting pull requests.
 * **Issue Tracking**: We utilize standardized templates for tracking bugs and feature requests. Please navigate to the **Issues** tab and select the appropriate template to report diagnostic data or suggest structural enhancements.
-* 
+  
 ## Security Notice
 
 This application operates exclusively as a static, client-side interface. Personal Access Tokens provided to the application are utilized strictly for authorizing requests to the official GitHub API. DemonZ Development does not collect, proxy, transmit, or store user credentials or repository telemetry.

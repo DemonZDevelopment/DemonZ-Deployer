@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DemonZ Deployer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Fira+Code:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- Ambient background -->
+  <div class="bg-canvas">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ LOGIN VIEW ══ -->
+  <div id="loginView" class="view">
+    <div class="login-wrap">
+
+      <div class="login-logo">
+        <div class="logo-icon-wrap">
+          <i data-lucide="zap" style="width:24px;height:24px;color:#ff7b2f;"></i>
+        </div>
+        <div class="logo-text-wrap">
+          <div class="logo-title"><span class="brand">DemonZ</span> Deployer</div>
+          <div class="logo-sub">Serverless Workspace Sync Engine</div>
+        </div>
+      </div>
+
+      <div class="login-card">
+        <div class="login-card-head">
+          <div class="ph-icon o"><i data-lucide="github"></i></div>
+          <span class="ph-title">Connect your GitHub account</span>
+        </div>
+        <p class="login-desc">Sign in via GitHub Device Flow — no passwords, no secrets stored. Your token lives in sessionStorage only and is cleared when you close the tab.</p>
+
+        <!-- Initial button -->
+        <button class="btn-primary full" id="connectBtn">
+          <i data-lucide="github" class="connect-icon"></i>
+          <div class="btn-spinner hidden" id="connectSpinner"></div>
+          <span id="connectLabel">Connect with GitHub</span>
+        </button>
+
+        <!-- Device code display (hidden until requested) -->
+        <div id="deviceCodeWrap" class="device-code-wrap hidden">
+          <div class="device-code-label">Enter this code on GitHub:</div>
+          <div class="device-code" id="deviceCode">---- ----</div>
+          <a class="btn-primary full" id="openGithubBtn" href="#" target="_blank" rel="noopener">
+            <i data-lucide="external-link"></i>
+            Open GitHub to Authorize
+          </a>
+          <div class="device-hint">Keep this tab open. We're polling for confirmation automatically.</div>
+          <button class="btn-sec full" id="cancelAuthBtn">
+            <i data-lucide="x"></i> Cancel
+          </button>
+        </div>
+
+        <div class="auth-status" id="authStatus"></div>
+      </div>
+
+      <div class="login-footer">
+        <span>Zero-server architecture</span>
+        <span class="dot">·</span>
+        <span>MIT License</span>
+        <span class="dot">·</span>
+        <span>DemonZ Development</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════ APP VIEW ══ -->
+  <div id="appView" class="view hidden">
+    <div class="app">
+
+      <!-- HEADER -->
+      <header>
+        <div class="logo-group">
+          <div class="logo-icon-wrap">
+            <i data-lucide="zap" style="width:20px;height:20px;color:#ff7b2f;"></i>
+          </div>
+          <div class="logo-text-wrap">
+            <div class="logo-title"><span class="brand">DemonZ</span> Deployer</div>
+            <div class="logo-sub">Serverless Workspace Sync Engine</div>
+          </div>
+        </div>
+        <div class="header-right">
+          <div class="hpill live" id="statusPill">
+            <div class="live-dot" id="liveDot"></div>
+            <span id="statusLabel">Idle</span>
+          </div>
+          <div class="user-chip" id="userChip">
+            <img class="user-avatar" id="userAvatar" src="" alt="avatar" />
+            <span class="user-name" id="userName"></span>
+            <button class="user-logout" id="logoutBtn" title="Sign out">
+              <i data-lucide="log-out"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- REPOSITORY PANEL -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="ph-icon p"><i data-lucide="git-fork"></i></div>
+          <span class="ph-title">Target Repository</span>
+          <button class="btn-sec sm" id="createRepoBtn">
+            <i data-lucide="plus"></i> New Repo
+          </button>
+        </div>
+
+        <div class="repo-config">
+          <!-- Repo search + dropdown -->
+          <div class="field">
+            <div class="field-label"><i data-lucide="search"></i> Repository</div>
+            <div class="repo-search-wrap">
+              <div class="inp-ico"><i data-lucide="github"></i></div>
+              <input type="text" id="repoSearch" class="repo-search-input" placeholder="Search your repositories…" autocomplete="off" spellcheck="false" />
+              <div class="repo-dropdown hidden" id="repoDropdown"></div>
+            </div>
+          </div>
+
+          <!-- Branch selector -->
+          <div class="field">
+            <div class="field-label"><i data-lucide="git-branch"></i> Branch</div>
+            <div class="select-wrap">
+              <i data-lucide="git-branch" class="select-ico"></i>
+              <select id="branchSelect" disabled>
+                <option>Select a repo first</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Workflow status row -->
+          <div class="workflow-row">
+            <div class="workflow-badge neutral" id="workflowBadge">
+              <i data-lucide="circle-dashed"></i>
+              No repository selected
+            </div>
+            <button class="btn-sec sm" id="setupRepoBtn" disabled>
+              <i data-lucide="settings-2"></i>
+              Setup Repository
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- DEPLOY PANEL -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="ph-icon o"><i data-lucide="package"></i></div>
+          <span class="ph-title">Deployment Artifact</span>
+          <span class="ph-meta">workspace.zip only</span>
+        </div>
+
+        <!-- Dropzone -->
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload workspace.zip">
+          <div class="dz-ring"><i data-lucide="upload-cloud"></i></div>
+          <div class="dz-default">
+            <div class="dz-title">Drop workspace.zip here</div>
+            <div class="dz-sub">Click to browse or drag and drop your compressed workspace archive</div>
+            <div class="dz-chip"><i data-lucide="file-archive"></i> .zip files only · deployed as workspace.zip</div>
+          </div>
+          <div class="dz-file-block" id="dzFileBlock">
+            <div class="dz-file-name" id="dzFileName"></div>
+            <div class="dz-file-meta" id="dzFileMeta"></div>
+          </div>
+          <input type="file" id="fileInput" accept=".zip" />
+        </div>
+
+        <!-- Progress bar -->
+        <div class="prog-row" id="progRow">
+          <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+          <div class="prog-label" id="progLabel">0%</div>
+        </div>
+
+        <!-- Pipeline steps -->
+        <div class="pipeline">
+          <div class="pipe-step" id="ps-auth">
+            <div class="pipe-step-icon"><i data-lucide="fingerprint"></i></div>
+            <div class="pipe-step-label">Auth</div>
+          </div>
+          <div class="pipe-conn" id="pc-1"></div>
+          <div class="pipe-step" id="ps-encode">
+            <div class="pipe-step-icon"><i data-lucide="binary"></i></div>
+            <div class="pipe-step-label">Encode</div>
+          </div>
+          <div class="pipe-conn" id="pc-2"></div>
+          <div class="pipe-step" id="ps-check">
+            <div class="pipe-step-icon"><i data-lucide="search-check"></i></div>
+            <div class="pipe-step-label">SHA Check</div>
+          </div>
+          <div class="pipe-conn" id="pc-3"></div>
+          <div class="pipe-step" id="ps-upload">
+            <div class="pipe-step-icon"><i data-lucide="send-horizontal"></i></div>
+            <div class="pipe-step-label">Upload</div>
+          </div>
+          <div class="pipe-conn" id="pc-4"></div>
+          <div class="pipe-step" id="ps-done">
+            <div class="pipe-step-icon"><i data-lucide="circle-check-big"></i></div>
+            <div class="pipe-step-label">Deployed</div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-sec" id="clearBtn"><i data-lucide="x"></i> Clear</button>
+          <button class="btn-primary" id="deployBtn" disabled>
+            <div class="btn-spinner hidden" id="deploySpinner"></div>
+            <i data-lucide="rocket" class="deploy-icon"></i>
+            <span id="deployLabel">Deploy Workspace</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- TERMINAL -->
+      <div class="terminal-outer">
+        <div class="term-bar">
+          <div class="mac-dots">
+            <div class="mac-dot"></div>
+            <div class="mac-dot"></div>
+            <div class="mac-dot"></div>
+          </div>
+          <div class="term-title">deploy.log — DemonZ Deployer</div>
+          <div class="term-acts">
+            <button class="term-act" id="copyTermBtn" title="Copy logs"><i data-lucide="clipboard"></i></button>
+            <button class="term-act" id="clearTermBtn" title="Clear terminal"><i data-lucide="eraser"></i></button>
+          </div>
+        </div>
+        <div class="term-body" id="terminal"></div>
+      </div>
+
+      <!-- FOOTER -->
+      <footer>
+        <div class="foot-brand">
+          <i data-lucide="zap"></i>
+          Engineered by <strong>DemonZ Development</strong> &mdash; MIT License
+        </div>
+        <div class="foot-links">
+          <a href="https://github.com/DemonZDevelopment/DemonZ-Deployer" target="_blank" class="foot-link">
+            <i data-lucide="github"></i> Repository
+          </a>
+          <a href="https://github.com/DemonZDevelopment/DemonZ-Deployer/blob/main/.github/workflows/deployer-pipeline.yml" target="_blank" class="foot-link">
+            <i data-lucide="workflow"></i> Pipeline
+          </a>
+          <a href="https://github.com/DemonZDevelopment/DemonZ-Deployer/blob/main/README.md" target="_blank" class="foot-link">
+            <i data-lucide="book-open"></i> Docs
+          </a>
+        </div>
+      </footer>
+
+    </div>
+  </div>
+
+  <!-- CREATE REPO MODAL -->
+  <div class="modal-backdrop hidden" id="createRepoModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="ph-icon g"><i data-lucide="git-branch-plus"></i></div>
+        <span class="ph-title">Create New Repository</span>
+        <button class="modal-close" id="createRepoCancel"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="field">
+        <div class="field-label"><i data-lucide="type"></i> Repository Name</div>
+        <div class="inp-wrap">
+          <div class="inp-ico"><i data-lucide="folder"></i></div>
+          <input type="text" id="newRepoName" placeholder="my-workspace" autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <div class="field-label"><i data-lucide="text"></i> Description <span style="opacity:.5">(optional)</span></div>
+        <div class="inp-wrap">
+          <div class="inp-ico"><i data-lucide="align-left"></i></div>
+          <input type="text" id="newRepoDesc" placeholder="Short description…" autocomplete="off" />
+        </div>
+      </div>
+
+      <label class="toggle-row" style="margin-top:16px">
+        <input type="checkbox" id="newRepoPrivate" />
+        <span class="toggle-label">
+          <i data-lucide="lock" style="width:13px;height:13px;"></i>
+          Private repository
+        </span>
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn-sec" id="createRepoCancelFooter">Cancel</button>
+        <button class="btn-primary" id="createRepoSubmit">
+          <i data-lucide="git-branch-plus"></i>
+          <span>Create Repository</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts (order matters) -->
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/terminal.js"></script>
+  <script src="js/pipeline.js"></script>
+  <script src="js/deploy.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

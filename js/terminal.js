@@ -16,7 +16,7 @@ const Terminal = (() => {
   function init(el) {
     _el = el;
     _appendCursor();
-    log('DemonZ Deployer ready. Session tokens are stored in sessionStorage and cleared on tab close.', 'sys', 'in');
+    log('DemonZ Deployer ready. Session token is stored in localStorage and persists across tabs.', 'sys', 'in');
   }
 
   function _ts() {

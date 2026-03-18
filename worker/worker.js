@@ -1,26 +1,38 @@
 /**
- * DemonZ Deployer — Cloudflare Worker CORS Proxy (Hardened)
+ * DemonZ Deployer — Cloudflare Worker (v2.0.3 — Secure Token Exchange)
+ *
+ * UPGRADE FROM v2.0.2:
+ *   The old worker was a dumb CORS proxy for Device Flow (/device/code, /token).
+ *   This version performs a Secure Token Exchange for Web Application Flow.
+ *   The CLIENT_SECRET lives here as an encrypted Cloudflare env variable —
+ *   it never appears in any frontend file.
  *
  * DEPLOY INSTRUCTIONS:
  *  1. Go to https://workers.cloudflare.com — sign up free
- *  2. Create a new Worker
- *  3. Paste this entire file
- *  4. Set ALLOWED_ORIGINS below to your actual GitHub Pages URL
+ *  2. Create a new Worker and paste this entire file
+ *  3. Set ALLOWED_ORIGINS below to your GitHub Pages URL
+ *  4. In Worker Settings → Variables → Secret, add a variable named CLIENT_SECRET
+ *     and paste your GitHub OAuth App's client secret as the value
  *  5. Click Save & Deploy
  *  6. Copy the *.workers.dev URL into CONFIG.PROXY_URL in js/config.js
  *
+ * GITHUB OAUTH APP SETTINGS (required update from v2.0.2):
+ *  - Authorization callback URL must be set to your app's URL, e.g.:
+ *    https://demonzdevelopment.github.io/DemonZ-Deployer/
+ *    (previously "not used" by Device Flow — now it is actively used)
+ *
  * OPTIONAL — Cloudflare KV rate limiting:
- *  For stricter rate limiting, bind a KV namespace called RATE_LIMIT
- *  in your Worker settings. Without it, the in-memory fallback is used
- *  (resets per Worker instance, still provides meaningful protection).
+ *  Bind a KV namespace called RATE_LIMIT in your Worker settings for
+ *  persistent rate limiting across all Worker instances. Without it,
+ *  the in-memory fallback still provides meaningful protection.
  */
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 /**
- * Set this to your GitHub Pages URL (and localhost for dev).
- * Requests from any other origin will be rejected with 403.
- * Use ['*'] to allow all origins — NOT recommended for production.
+ * Only requests from these origins are accepted.
+ * Include 'http://localhost' and 'http://127.0.0.1' for local development.
+ * Use ['*'] ONLY for temporary debugging — never in production.
  */
 const ALLOWED_ORIGINS = [
   'https://demonzdevelopment.github.io',
@@ -28,25 +40,22 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1',
 ];
 
-/** Only these two paths are proxied — everything else returns 404. */
-const ALLOWED_TARGETS = {
-  '/device/code': 'https://github.com/login/device/code',
-  '/token':       'https://github.com/login/oauth/access_token',
-};
+/** The single exposed endpoint. POST /exchange → access_token */
+const EXCHANGE_PATH = '/exchange';
 
-/** Max request body size in bytes (1 KB is ample for OAuth payloads). */
+/** Max request body in bytes (1 KB is ample — OAuth codes are short strings). */
 const MAX_BODY_BYTES = 1024;
 
 /**
- * Rate limit: max requests per IP per window.
- * /device/code is intentionally stricter (prevents code-spam).
+ * Rate limit for /exchange.
+ * OAuth codes are single-use and expire in ~10 minutes, so 10 exchange
+ * attempts per 5-minute window is generous for real users and restrictive
+ * enough to blunt brute-force abuse.
  */
-const RATE_LIMITS = {
-  '/device/code': { max: 5,  windowSec: 300 }, // 5 per 5 min
-  '/token':       { max: 30, windowSec: 300 }, // 30 per 5 min (polling)
-};
+const RATE_LIMIT_MAX        = 10;
+const RATE_LIMIT_WINDOW_SEC = 300;
 
-// ── In-memory fallback store (resets per Worker isolate, ~per-request in free plan) ──
+// ── In-memory fallback store (resets per Worker isolate) ──────────────────────
 const memStore = new Map();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -63,7 +72,11 @@ function corsHeaders(origin) {
 function reply(body, status, origin, extra = {}) {
   return new Response(body, {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json', ...extra },
+    headers: {
+      ...corsHeaders(origin),
+      'Content-Type': 'application/json',
+      ...extra,
+    },
   });
 }
 
@@ -74,27 +87,28 @@ function isAllowedOrigin(origin) {
 }
 
 /**
- * Simple IP-based rate limiter.
- * Uses Cloudflare KV if the RATE_LIMIT binding exists, otherwise in-memory.
+ * IP-based rate limiter.
+ * Uses Cloudflare KV (persistent across instances) when the RATE_LIMIT
+ * binding is present; falls back to in-memory otherwise.
+ * Returns true if the request should be throttled.
  */
-async function checkRateLimit(ip, pathname, env) {
-  const rule = RATE_LIMITS[pathname];
-  if (!rule) return false; // unknown path — blocked earlier anyway
-
-  const key   = `rl:${ip}:${pathname}`;
+async function checkRateLimit(ip, env) {
+  const key   = `rl:${ip}:exchange`;
   const now   = Math.floor(Date.now() / 1000);
-  const reset = now + rule.windowSec;
+  const reset = now + RATE_LIMIT_WINDOW_SEC;
 
-  // ── KV-backed (persistent across Workers instances) ──
-  if (env && env.RATE_LIMIT) {
-    const raw = await env.RATE_LIMIT.get(key);
+  // ── KV-backed path ──
+  if (env?.RATE_LIMIT) {
+    const raw   = await env.RATE_LIMIT.get(key);
     const entry = raw ? JSON.parse(raw) : { count: 0, reset };
 
     if (now > entry.reset) { entry.count = 0; entry.reset = reset; }
     entry.count++;
 
-    await env.RATE_LIMIT.put(key, JSON.stringify(entry), { expirationTtl: rule.windowSec + 10 });
-    return entry.count > rule.max;
+    await env.RATE_LIMIT.put(key, JSON.stringify(entry), {
+      expirationTtl: RATE_LIMIT_WINDOW_SEC + 10,
+    });
+    return entry.count > RATE_LIMIT_MAX;
   }
 
   // ── In-memory fallback ──
@@ -102,91 +116,129 @@ async function checkRateLimit(ip, pathname, env) {
   if (now > entry.reset) { entry.count = 0; entry.reset = reset; }
   entry.count++;
   memStore.set(key, entry);
-  // Prune old entries to avoid unbounded growth
+
+  // Prune stale entries to prevent unbounded map growth
   if (memStore.size > 5000) {
-    for (const [k, v] of memStore) { if (now > v.reset) memStore.delete(k); }
+    for (const [k, v] of memStore) {
+      if (now > v.reset) memStore.delete(k);
+    }
   }
-  return entry.count > rule.max;
+  return entry.count > RATE_LIMIT_MAX;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 async function handleRequest(request, env) {
-  const origin = request.headers.get('Origin') || '';
-  const cors   = corsHeaders(isAllowedOrigin(origin) ? origin : '');
+  const origin  = request.headers.get('Origin') || '';
+  const allowed = isAllowedOrigin(origin);
+  const cors    = corsHeaders(allowed ? origin : '');
 
-  // Preflight
+  // ── Preflight ──
   if (request.method === 'OPTIONS') {
-    if (!isAllowedOrigin(origin)) return new Response(null, { status: 403 });
+    if (!allowed) return new Response(null, { status: 403 });
     return new Response(null, { status: 204, headers: cors });
   }
 
-  // Origin check (rejects non-browser direct calls too)
-  if (!isAllowedOrigin(origin)) {
+  // ── Origin guard — reject before doing any work ──
+  if (!allowed) {
     return reply('{"error":"Forbidden"}', 403, '');
   }
 
-  // Method guard
+  // ── Method guard ──
   if (request.method !== 'POST') {
     return reply('{"error":"Method not allowed"}', 405, origin);
   }
 
-  // Path guard
+  // ── Path guard ──
   const { pathname } = new URL(request.url);
-  const target = ALLOWED_TARGETS[pathname];
-  if (!target) {
+  if (pathname !== EXCHANGE_PATH) {
     return reply('{"error":"Not found"}', 404, origin);
   }
 
-  // Body size guard
+  // ── Client secret guard ──
+  // Fail loudly if the env variable was never bound, rather than silently
+  // forwarding an incomplete request to GitHub.
+  if (!env?.CLIENT_SECRET) {
+    console.error('CLIENT_SECRET environment variable is not set in this Worker.');
+    return reply(
+      '{"error":"Worker misconfigured — CLIENT_SECRET is not set. Check Worker environment variables."}',
+      500,
+      origin
+    );
+  }
+
+  // ── Body size guard (header) ──
   const contentLength = parseInt(request.headers.get('Content-Length') || '0', 10);
   if (contentLength > MAX_BODY_BYTES) {
     return reply('{"error":"Payload too large"}', 413, origin);
   }
 
-  // Rate limit
+  // ── Rate limit ──
   const ip        = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const throttled = await checkRateLimit(ip, pathname, env);
+  const throttled = await checkRateLimit(ip, env);
   if (throttled) {
     return reply(
       '{"error":"Too many requests. Please wait before trying again."}',
       429,
       origin,
-      { 'Retry-After': String(RATE_LIMITS[pathname].windowSec) }
+      { 'Retry-After': String(RATE_LIMIT_WINDOW_SEC) }
     );
   }
 
-  // Read + size-check body
-  const bodyText = await request.text();
-  if (bodyText.length > MAX_BODY_BYTES) {
+  // ── Read + byte-accurate size check ──
+  const bodyText  = await request.text();
+  const byteSize  = new TextEncoder().encode(bodyText).length;
+  if (byteSize > MAX_BODY_BYTES) {
     return reply('{"error":"Payload too large"}', 413, origin);
   }
 
-  // Validate body is JSON (no garbage forwarding)
-  try { JSON.parse(bodyText); }
-  catch { return reply('{"error":"Invalid JSON body"}', 400, origin); }
-
-  // Proxy to GitHub
+  // ── Validate JSON ──
+  let payload;
   try {
-    const upstream = await fetch(target, {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return reply('{"error":"Invalid JSON body"}', 400, origin);
+  }
+
+  // ── Validate required fields ──
+  if (
+    !payload.code       || typeof payload.code      !== 'string' || payload.code.length      > 256 ||
+    !payload.client_id  || typeof payload.client_id !== 'string' || payload.client_id.length > 128
+  ) {
+    return reply('{"error":"Missing or invalid \\"code\\" or \\"client_id\\" field"}', 400, origin);
+  }
+
+  // ── Secure server-to-server token exchange with GitHub ──
+  try {
+    const upstream = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept':       'application/json',
-        'User-Agent':   'DemonZ-Deployer-Worker/2.0',
+        'User-Agent':   'DemonZ-Deployer-Worker/2.0.3',
       },
-      body: bodyText,
+      body: JSON.stringify({
+        client_id:     payload.client_id,
+        client_secret: env.CLIENT_SECRET,  // ← injected here; never in frontend
+        code:          payload.code,
+      }),
     });
 
-    const text = await upstream.text();
+    const responseText = await upstream.text();
 
-    return new Response(text, {
+    // Ensure GitHub returned parseable JSON before forwarding
+    try { JSON.parse(responseText); } catch {
+      return reply('{"error":"Upstream returned an unexpected response"}', 502, origin);
+    }
+
+    return new Response(responseText, {
       status:  upstream.status,
       headers: { ...cors, 'Content-Type': 'application/json' },
     });
 
   } catch (err) {
-    return reply('{"error":"Upstream request failed"}', 502, origin);
+    console.error('Upstream fetch to GitHub failed:', err.message);
+    return reply('{"error":"Upstream request to GitHub failed"}', 502, origin);
   }
 }
 

@@ -1,31 +1,33 @@
 /**
- * DemonZ Deployer — Configuration
+ * DemonZ Deployer — Configuration (v2.0.3)
  *
  * SETUP REQUIRED:
- * 1. Create a GitHub OAuth App at:
- * https://github.com/settings/developers → OAuth Apps → New OAuth App
- * - Homepage URL:            https://<your-username>.github.io/DemonZ-Deployer/
- * - Authorization callback:  (same URL — device flow doesn't use it, but GitHub requires it)
- * - Copy the CLIENT_ID below (do NOT copy the client secret — device flow never needs it)
+ * 1. Create (or update) a GitHub OAuth App at:
+ *    https://github.com/settings/developers → OAuth Apps
  *
- * 2. Deploy worker/worker.js to Cloudflare Workers (free):
- * https://workers.cloudflare.com
- * - Paste the worker code, deploy, copy the *.workers.dev URL into PROXY_URL below
+ *    Required settings for v2.0.3 Web Application Flow:
+ *    - Homepage URL:              https://<your-username>.github.io/DemonZ-Deployer/
+ *    - Authorization callback URL: https://<your-username>.github.io/DemonZ-Deployer/
+ *      ↑ This was unused by Device Flow but is now actively required.
  *
- * That's it. No backend, no secrets exposed.
+ *    Copy your CLIENT_ID below. Do NOT put your Client Secret here —
+ *    it lives exclusively in the Cloudflare Worker as an env variable.
+ *
+ * 2. Deploy worker/worker.js to Cloudflare Workers:
+ *    https://workers.cloudflare.com
+ *    - Add CLIENT_SECRET as an encrypted Secret in Worker Settings → Variables
+ *    - Copy the *.workers.dev URL into PROXY_URL below
+ *
+ * That's it. No backend server. Client secret never exposed to the browser.
  */
 
 const CONFIG = Object.freeze({
-  // ── Required ───────────────────────────────────────────────
-  CLIENT_ID:     'Ov23liFAyEj9YNz0XrRN',
-  PROXY_URL:     'https://demonzdeployer.demonzdevelopment.workers.dev',
+  // ── Required — fill these in ───────────────────────────────
+  CLIENT_ID:  'Ov23liFAyEj9YNz0XrRN',
+  PROXY_URL:  'https://demonzdeployer.demonzdevelopment.workers.dev',
 
   // ── Fixed — do not change ──────────────────────────────────
-  DEPLOYER_REPO:  'DemonZDevelopment/DemonZ-Deployer',
-  WORKFLOW_PATH:  '.github/workflows/deployer-pipeline.yml',
-  
-  // THE FIX: Added 'workflow' so GitHub allows pipeline installation
-  SCOPES:         'repo,workflow', 
-  
-  POLL_INTERVAL:  5,   // seconds — GitHub minimum is 5
+  DEPLOYER_REPO: 'DemonZDevelopment/DemonZ-Deployer',
+  WORKFLOW_PATH: '.github/workflows/deployer-pipeline.yml',
+  SCOPES:        'repo,workflow',
 });

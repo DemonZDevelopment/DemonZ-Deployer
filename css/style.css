@@ -86,42 +86,6 @@ html, body {
   line-height: 1.65;
 }
 
-.device-code-wrap {
-  display: flex; flex-direction: column; gap: 12px; align-items: center;
-  padding: 20px;
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.device-code-label {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-.device-code {
-  font-family: var(--mono);
-  font-size: 2rem;
-  font-weight: 600;
-  letter-spacing: 0.3em;
-  color: var(--orange);
-  text-shadow: 0 0 20px rgba(255,123,47,0.4);
-  padding: 10px 24px;
-  background: var(--orange-dim);
-  border: 1px solid rgba(255,123,47,0.3);
-  border-radius: var(--radius-sm);
-}
-
-.device-hint {
-  font-family: var(--mono);
-  font-size: 0.67rem;
-  color: var(--text-dim);
-  text-align: center;
-  line-height: 1.5;
-}
 
 .auth-status {
   font-family: var(--mono);

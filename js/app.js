@@ -1,6 +1,11 @@
 /**
- * DemonZ Deployer — Main Application Controller
- * Manages views, state, and user interactions.
+ * DemonZ Deployer — Main Application Controller (v2.0.3)
+ *
+ * Key changes from v2.0.2:
+ *   - init() now checks for ?code= in the URL on load (OAuth callback).
+ *   - _startAuth() redirects to GitHub instead of triggering Device Flow.
+ *   - Device code UI references removed (deviceCodeWrap, cancelAuthBtn, etc.).
+ *   - URL is cleaned via history.replaceState after a successful exchange.
  */
 
 const App = (() => {
@@ -17,12 +22,12 @@ const App = (() => {
     workflowInstalled: false,
   };
 
-  /* ── DOM refs (populated in init) ── */
+  /* ── DOM refs ── */
   let D = {};
   const $ = id => document.getElementById(id);
 
   /* ════════════════════════════ INIT ══ */
-  function init() {
+  async function init() {
     D = {
       // Views
       loginView:          $('loginView'),
@@ -31,11 +36,7 @@ const App = (() => {
       connectBtn:         $('connectBtn'),
       connectSpinner:     $('connectSpinner'),
       connectLabel:       $('connectLabel'),
-      deviceCodeWrap:     $('deviceCodeWrap'),
-      deviceCode:         $('deviceCode'),
-      openGithubBtn:      $('openGithubBtn'),
       authStatus:         $('authStatus'),
-      cancelAuthBtn:      $('cancelAuthBtn'),
       // Header / user
       userAvatar:         $('userAvatar'),
       userName:           $('userName'),
@@ -77,27 +78,41 @@ const App = (() => {
 
     Terminal.init(D.terminal);
     _bindEvents();
+    lucide.createIcons();
 
-    // THE FIX: loadSession now checks localStorage
+    // ── v2.0.3: Check for OAuth callback FIRST ──────────────────────────────
+    // GitHub redirects back to the app with ?code=XXX&state=XXX in the URL.
+    // We handle this before checking for an existing session so a fresh login
+    // always takes priority over a stale stored token.
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthCode  = urlParams.get('code');
+    const oauthState = urlParams.get('state');
+
+    if (oauthCode && oauthState) {
+      // Strip the ?code=&state= from the URL immediately — it's single-use
+      // and looks messy. Do this before any async work so it disappears fast.
+      window.history.replaceState({}, document.title, window.location.pathname);
+      await _handleOAuthCallback(oauthCode, oauthState);
+      return;
+    }
+
+    // ── No callback — check for an existing saved session ──────────────────
     const session = Auth.loadSession();
     if (session) {
       API.setToken(session.token);
       _loginSuccess(session.user, false);
     }
-
-    lucide.createIcons();
   }
 
   /* ════════════════════════════ EVENT BINDING ══ */
   function _bindEvents() {
     // ── Auth
-    D.connectBtn.addEventListener('click',    _startAuth);
-    D.cancelAuthBtn.addEventListener('click', () => { Auth.cancel(); _showLoginInitial(); });
-    D.logoutBtn.addEventListener('click',     _logout);
+    D.connectBtn.addEventListener('click', _startAuth);
+    D.logoutBtn.addEventListener('click',  _logout);
 
     // ── Repo search dropdown
-    D.repoSearch.addEventListener('focus',  () => _showDropdown());
-    D.repoSearch.addEventListener('input',  _filterRepos);
+    D.repoSearch.addEventListener('focus', () => _showDropdown());
+    D.repoSearch.addEventListener('input', _filterRepos);
     document.addEventListener('click', e => {
       if (!D.repoSearch.contains(e.target) && !D.repoDropdown.contains(e.target)) {
         _hideDropdown();
@@ -148,24 +163,33 @@ const App = (() => {
   }
 
   /* ════════════════════════════ AUTH ══ */
-  async function _startAuth() {
+
+  /**
+   * v2.0.3: "Connect with GitHub" now triggers an immediate redirect.
+   * No device code, no polling, no tab-switching confusion.
+   */
+  function _startAuth() {
     D.connectBtn.disabled     = true;
     D.connectSpinner.classList.remove('hidden');
-    D.connectLabel.textContent = 'Requesting code…';
+    D.connectLabel.textContent = 'Redirecting to GitHub…';
+    // Small delay so the UI update is visible before the tab navigates away
+    setTimeout(() => Auth.startOAuthRedirect(), 150);
+  }
+
+  /**
+   * v2.0.3: Called on page load when ?code= is detected in the URL.
+   * Exchanges the code for a token via the Cloudflare Worker, then logs in.
+   */
+  async function _handleOAuthCallback(code, state) {
+    D.connectBtn.disabled     = true;
+    D.connectSpinner.classList.remove('hidden');
+    D.connectLabel.textContent = 'Completing sign-in…';
+    D.authStatus.textContent  = 'Exchanging authorization code…';
+    D.authStatus.style.color  = '';
 
     try {
-      const { device_code, user_code, verification_uri, interval } = await Auth.requestDeviceCode();
-
-      // Show device code UI
-      D.deviceCode.textContent  = user_code;
-      D.openGithubBtn.href      = verification_uri;
-      D.deviceCodeWrap.classList.remove('hidden');
-      D.connectBtn.classList.add('hidden');
-      D.authStatus.textContent  = 'Waiting for you to approve on GitHub…';
-      D.authStatus.style.color  = '';
-
-      const token = await Auth.pollForToken(device_code, interval);
-      D.authStatus.textContent  = 'Approved! Loading your profile…';
+      const token = await Auth.exchangeCode(code, state);
+      D.authStatus.textContent = 'Token received. Loading your profile…';
 
       API.setToken(token);
       const user = await API.getUser();
@@ -173,18 +197,14 @@ const App = (() => {
       _loginSuccess(user, true);
 
     } catch (err) {
-      D.authStatus.textContent = `Error: ${err.message}`;
-      D.authStatus.style.color = 'var(--error)';
-      _showLoginInitial();
+      // Reset the login view so the user can try again
+      D.connectBtn.disabled = false;
+      D.connectSpinner.classList.add('hidden');
+      D.connectLabel.textContent = 'Connect with GitHub';
+      D.authStatus.textContent   = `Sign-in failed: ${err.message}`;
+      D.authStatus.style.color   = 'var(--error)';
+      Terminal.log(`OAuth callback error: ${err.message}`, 'error', 'er');
     }
-  }
-
-  function _showLoginInitial() {
-    D.deviceCodeWrap.classList.add('hidden');
-    D.connectBtn.classList.remove('hidden');
-    D.connectBtn.disabled = false;
-    D.connectSpinner.classList.add('hidden');
-    D.connectLabel.textContent = 'Connect with GitHub';
   }
 
   async function _loginSuccess(user, fresh) {
@@ -196,12 +216,10 @@ const App = (() => {
     D.userAvatar.src        = user.avatar_url;
     D.userName.textContent  = user.login;
 
-    lucide.createIcons(); // re-init icons in freshly shown view
+    lucide.createIcons();
 
     Terminal.log(`Authenticated as ${user.login}.`, 'success', 'ok');
-    
-    // THE FIX: Updated terminal message to reflect localStorage change
-    if (fresh) Terminal.log('Token securely saved locally. You will stay logged in.', 'dim');
+    if (fresh) Terminal.log('Token saved locally. You will stay logged in.', 'dim');
 
     await _loadRepos();
   }
@@ -215,8 +233,12 @@ const App = (() => {
     };
     D.appView.classList.add('hidden');
     D.loginView.classList.remove('hidden');
-    _showLoginInitial();
-    D.authStatus.textContent = '';
+    // Reset connect button to default state
+    D.connectBtn.disabled = false;
+    D.connectSpinner.classList.add('hidden');
+    D.connectLabel.textContent = 'Connect with GitHub';
+    D.authStatus.textContent   = '';
+    D.authStatus.style.color   = '';
   }
 
   /* ════════════════════════════ REPOS ══ */
@@ -330,12 +352,12 @@ const App = (() => {
   /* ════════════════════════════ SETUP REPO ══ */
   async function _setupRepo() {
     if (!state.selectedRepo) return;
-    D.setupRepoBtn.disabled   = true;
+    D.setupRepoBtn.disabled    = true;
     D.setupRepoBtn.textContent = 'Installing…';
 
     try {
       await Deploy.installWorkflow(state.selectedRepo, state.selectedBranch);
-      state.workflowInstalled  = true;
+      state.workflowInstalled = true;
       _setWorkflowBadge('ok', 'circle-check', '✓ Deployment pipeline installed');
       D.setupRepoBtn.textContent = '↺ Reinstall Workflow';
       lucide.createIcons();
@@ -355,12 +377,11 @@ const App = (() => {
 
   function _hideModal() {
     D.createRepoModal.classList.add('hidden');
-    D.newRepoName.value  = '';
-    D.newRepoDesc.value  = '';
-    D.newRepoPrivate.checked = false;
+    D.newRepoName.value          = '';
+    D.newRepoDesc.value          = '';
+    D.newRepoPrivate.checked     = false;
   }
 
-  // THE FIX: Smart polling to handle GitHub's backend branch-creation delay
   async function _createRepo() {
     const name = D.newRepoName.value.trim();
     if (!name) { D.newRepoName.focus(); return; }
@@ -375,27 +396,27 @@ const App = (() => {
         D.newRepoPrivate.checked
       );
       Terminal.log(`Repository created: ${repo.full_name}`, 'success', 'ok');
-      Terminal.log(`Waiting for GitHub to initialize branch...`, 'dim');
+      Terminal.log('Waiting for GitHub to initialize branch…', 'dim');
       _hideModal();
-      
-      // Delay briefly to allow GitHub's backend to physically create the default branch
+
+      // Allow GitHub's backend time to physically create the default branch
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
+
       await _loadRepos();
       const newRepo = state.repos.find(r => r.full_name === repo.full_name);
-      
+
       if (newRepo) {
-         // Fallback retry loop if GitHub is particularly slow
-         let attempts = 0;
-         while(attempts < 3) {
-            try {
-               const branches = await API.listBranches(newRepo.full_name);
-               if(branches && branches.length > 0) break;
-            } catch(e) {}
-            attempts++;
-            await new Promise(resolve => setTimeout(resolve, 1000));
-         }
-         _selectRepo(newRepo);
+        // Retry loop in case GitHub is particularly slow
+        let attempts = 0;
+        while (attempts < 3) {
+          try {
+            const branches = await API.listBranches(newRepo.full_name);
+            if (branches && branches.length > 0) break;
+          } catch (_) {}
+          attempts++;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        _selectRepo(newRepo);
       }
     } catch (err) {
       Terminal.log(`Failed to create repository: ${err.message}`, 'error', 'er');
@@ -420,7 +441,7 @@ const App = (() => {
     const sizeMB = file.size / 1_048_576;
     if (sizeMB > 50) {
       Terminal.log(
-        `Warning: ${file.name} is ${sizeMB.toFixed(1)} MB. GitHub's Contents API has a ~50 MB limit — upload may fail.`,
+        `Warning: ${file.name} is ${sizeMB.toFixed(1)} MB. GitHub's Contents API has a ~100 MB limit — large files may be slow or fail.`,
         'warn', 'wn'
       );
     }
@@ -482,11 +503,11 @@ const App = (() => {
   }
 
   function _clearDeploy() {
-    state.selectedFile     = null;
-    D.fileInput.value      = '';
-    D.dropzone.className   = 'dropzone';
-    D.dzFileName.textContent = '';
-    D.dzFileMeta.textContent = '';
+    state.selectedFile         = null;
+    D.fileInput.value          = '';
+    D.dropzone.className       = 'dropzone';
+    D.dzFileName.textContent   = '';
+    D.dzFileMeta.textContent   = '';
     _setProg(null);
     Pipeline.reset();
     _setStatus('Idle', '');
@@ -513,8 +534,8 @@ const App = (() => {
   function _setProg(pct) {
     if (pct === null) { D.progRow.classList.remove('show'); return; }
     D.progRow.classList.add('show');
-    D.progFill.style.width    = `${pct}%`;
-    D.progLabel.textContent   = `${pct}%`;
+    D.progFill.style.width  = `${pct}%`;
+    D.progLabel.textContent = `${pct}%`;
   }
 
   return { init };

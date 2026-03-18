@@ -6,11 +6,11 @@
 
 <div align="center">
 
-# DemonZ Deployer v2.0.2
+# DemonZ Deployer v2.0.3
 
 **A zero‑friction, serverless continuous deployment (CD) engine built for mobile‑first developers.**
 
-[![Version](https://img.shields.io/badge/Version-2.0.2-ff7b2f?style=flat-square)](#)
+[![Version](https://img.shields.io/badge/Version-2.0.3-ff7b2f?style=flat-square)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-c061ff?style=flat-square)](./LICENSE)
 [![Architecture](https://img.shields.io/badge/Architecture-Serverless-7070a0?style=flat-square)](#)
 [![Live App](https://img.shields.io/badge/🚀_Launch_App-GitHub_Pages-3de89e?style=flat-square)](https://demonzdevelopment.github.io/DemonZ-Deployer/)
@@ -51,11 +51,11 @@ No manual token generation. No infrastructure. No friction.
 
 ---
 
-## ✨ Core Features (v2.0.2)
+## ✨ Core Features (v2.0.3)
 
-The v2.0.2 OAuth Update introduces a hardened, modular architecture optimised for security and speed.
+The v2.0.3 One-Click Login update deprecates Device Flow in favour of the GitHub Web Application Flow, eliminating manual code entry and tab-switching entirely.
 
-* **GitHub Device Flow (OAuth 2.0)** – Effortless, secure authentication. No manual Personal Access Token (PAT) generation required.
+* **GitHub OAuth 2.0 (Web Application Flow)** – One-click authentication. GitHub redirects you back automatically — no codes to copy, no tabs to switch.
 * **100% Serverless Architecture** – Operates entirely in the browser, supported by a highly restricted Cloudflare Worker CORS proxy.
 * **Live Repository Integration** – Instantly search, filter, and select from your personal and organisational repositories.
 * **Automated Pipeline Installation** – Install the required GitHub Actions extraction workflow into any target repository with a single click.
@@ -68,7 +68,7 @@ The v2.0.2 OAuth Update introduces a hardened, modular architecture optimised fo
 DemonZ Deployer requires zero installation and operates entirely within your browser.
 
 1. **Authenticate**
-   Navigate to the Deployer Console and click Connect with GitHub. Follow the Device Flow prompts to securely authorise the application.
+   Navigate to the Deployer Console and click Connect with GitHub. You'll be redirected to GitHub to authorise the app, then brought straight back automatically.
 2. **Select Target**
    Use the live search interface to select your target repository and branch.
 3. **Initialize Pipeline (First‑Time Only)**
@@ -105,7 +105,7 @@ DemonZ Deployer is built on a **Zero‑Trust Client‑Side Model**. Your code an
 
 For developers wishing to fork this repository or host an internal instance:
 
-1. Register a new **GitHub OAuth Application** and enable Device Flow.
+1. Register a new **GitHub OAuth Application** and set the Authorization Callback URL to your app's hosted URL.
 2. Deploy the proxy script located at `worker/worker.js` to **Cloudflare Workers**.
 3. Update `js/config.js` with your distinct `CLIENT_ID` and Cloudflare `PROXY_URL`.
 4. Host the frontend assets via GitHub Pages or any static CDN.

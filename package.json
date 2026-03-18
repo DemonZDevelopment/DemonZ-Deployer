@@ -1,0 +1,15 @@
+{
+  "name": "@demonzdevelopment/demonz-deployer",
+  "version": "2.0.2",
+  "description": "Serverless GitHub deployment engine for mobile-first developers.",
+  "main": "js/app.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DemonZDevelopment/DemonZ-Deployer.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "author": "DemonZ Development",
+  "license": "MIT"
+}

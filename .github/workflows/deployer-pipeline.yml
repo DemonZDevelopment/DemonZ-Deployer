@@ -1,0 +1,363 @@
+# DZ_PIPELINE_VERSION=3.0.0
+name: DemonZ Workspace Deployment Pipeline
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DemonZ Deployer — Pipeline v3.0.0 "Command Center"  |  2026-04-03
+# ─────────────────────────────────────────────────────────────────────────────
+# Changelog:
+#   v3.0.0 — Deploy mode support (merge/replace) via commit message metadata.
+#             .deployignore file support for excluding files during sync.
+#             Deployment receipt (.deploy-receipt.json) written after sync.
+#             workflow_dispatch trigger for manual rollback.
+#             Machine-readable version tag for smart client-side detection.
+#   v2.0.3 — Concurrency guard, stat-based size check, self-protection.
+#   v2.0.2 — Initial professional rewrite.
+# ═════════════════════════════════════════════════════════════════════════════
+
+on:
+  push:
+    paths:
+      - 'workspace.zip'
+
+  # Manual trigger for rollback
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - rollback
+      rollback_sha:
+        description: 'Commit SHA to rollback to (required for rollback)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  PAYLOAD_FILE: 'workspace.zip'
+  EXTRACT_DIR:  '__workspace_extract__'
+  BOT_NAME:     'DemonZ Deployer Bot'
+  BOT_EMAIL:    'deployer@demonz.dev'
+  COMMIT_MSG:   'build(sync): update workspace via DemonZ Deployer'
+  MAX_SIZE_MB:  '100'
+
+jobs:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ROLLBACK JOB — triggered via workflow_dispatch
+  # ═══════════════════════════════════════════════════════════════════════════
+  rollback:
+    name: Rollback to Previous State
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'rollback' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Perform Rollback
+        run: |
+          set -euo pipefail
+          SHA="${{ github.event.inputs.rollback_sha }}"
+
+          if [ -z "$SHA" ]; then
+            echo "::error::No rollback SHA provided."
+            exit 1
+          fi
+
+          echo "Rolling back to commit: $SHA"
+
+          # Verify the SHA exists
+          if ! git cat-file -t "$SHA" &>/dev/null; then
+            echo "::error::Commit SHA $SHA not found in this repository."
+            exit 1
+          fi
+
+          git config --local user.name  "${{ env.BOT_NAME }}"
+          git config --local user.email "${{ env.BOT_EMAIL }}"
+
+          # Create a revert by resetting the tree to the target SHA
+          git checkout "$SHA" -- .
+          git add -A
+
+          if git diff-index --quiet HEAD --; then
+            echo "No differences found. Already at target state."
+            exit 0
+          fi
+
+          git commit -m "revert: rollback to ${SHA:0:14} via DemonZ Deployer"
+          git push
+
+          echo "Rollback complete."
+
+      - name: Rollback Summary
+        if: always()
+        run: |
+          echo "## DemonZ Deployer — Rollback Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Action** | Rollback |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Target SHA** | \`${{ github.event.inputs.rollback_sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Forging Digital Empires — DemonZ Development*" >> $GITHUB_STEP_SUMMARY
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DEPLOY JOB — triggered by push to workspace.zip or manual deploy
+  # ═══════════════════════════════════════════════════════════════════════════
+  extract-and-sync:
+    name: Extract Payload and Synchronize Workspace
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Payload validation ──────────────────────────────────────────────
+      - name: Validate Payload
+        run: |
+          set -euo pipefail
+          echo "── Payload Validation ──────────────────────────────"
+
+          if [ ! -f "${{ env.PAYLOAD_FILE }}" ]; then
+            echo "::error::Payload file '${{ env.PAYLOAD_FILE }}' not found."
+            exit 1
+          fi
+
+          SIZE_BYTES=$(stat -c%s "${{ env.PAYLOAD_FILE }}")
+          SIZE_MB=$((SIZE_BYTES / 1048576))
+          echo "Payload size: ${SIZE_MB} MB (${SIZE_BYTES} bytes) — limit: ${{ env.MAX_SIZE_MB }} MB"
+          if [ "$SIZE_MB" -gt "${{ env.MAX_SIZE_MB }}" ]; then
+            echo "::error::Payload exceeds the ${{ env.MAX_SIZE_MB }} MB limit."
+            exit 1
+          fi
+
+          if ! unzip -t "${{ env.PAYLOAD_FILE }}" > /dev/null 2>&1; then
+            echo "::error::Payload failed ZIP integrity test."
+            exit 1
+          fi
+
+          TRAVERSAL=$(unzip -l "${{ env.PAYLOAD_FILE }}" | awk '{print $NF}' | grep '\.\.' || true)
+          if [ -n "$TRAVERSAL" ]; then
+            echo "::error::Payload contains path traversal entries. Aborting."
+            echo "$TRAVERSAL"
+            exit 1
+          fi
+
+          echo "Payload valid. Proceeding."
+
+      # ── 3. Detect deploy mode from commit message ──────────────────────────
+      - name: Detect Deploy Mode
+        id: mode
+        run: |
+          set -euo pipefail
+          COMMIT_MSG=$(git log -1 --format=%B)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Look for [mode:merge] or [mode:replace]
+          if echo "$COMMIT_MSG" | grep -qiE '\[mode:replace\]'; then
+            echo "DEPLOY_MODE=replace" >> $GITHUB_ENV
+            echo "Deploy mode: REPLACE (clean sync)"
+          else
+            echo "DEPLOY_MODE=merge" >> $GITHUB_ENV
+            echo "Deploy mode: MERGE (overlay)"
+          fi
+
+      # ── 4. Extract to staging directory ───────────────────────────────────
+      - name: Extract Workspace Payload
+        run: |
+          set -euo pipefail
+          echo "── Extraction ──────────────────────────────────────"
+
+          rm -rf "${{ env.EXTRACT_DIR }}"
+          mkdir -p "${{ env.EXTRACT_DIR }}"
+          unzip -q -o "${{ env.PAYLOAD_FILE }}" -d "${{ env.EXTRACT_DIR }}"
+          echo "Archive extracted to staging directory."
+
+          FILE_COUNT=$(find "${{ env.EXTRACT_DIR }}" -type f | wc -l | tr -d ' ')
+          echo "EXTRACTED_FILES=$FILE_COUNT" >> $GITHUB_ENV
+
+          # Single root folder flattening
+          ROOTS=$(ls -1 "${{ env.EXTRACT_DIR }}" | wc -l | tr -d ' ')
+          FIRST=$(ls -1 "${{ env.EXTRACT_DIR }}" | head -1)
+          if [ "$ROOTS" -eq 1 ] && [ -d "${{ env.EXTRACT_DIR }}/$FIRST" ]; then
+            echo "Single root folder '$FIRST' detected — flattening."
+            mv "${{ env.EXTRACT_DIR }}/$FIRST"/* "${{ env.EXTRACT_DIR }}/" 2>/dev/null || true
+            mv "${{ env.EXTRACT_DIR }}/$FIRST"/.[!.]* "${{ env.EXTRACT_DIR }}/" 2>/dev/null || true
+            rmdir "${{ env.EXTRACT_DIR }}/$FIRST" 2>/dev/null || true
+          fi
+
+          echo "Staging complete. $FILE_COUNT files ready to sync."
+
+      # ── 5. Apply .deployignore rules ───────────────────────────────────────
+      - name: Apply .deployignore Rules
+        run: |
+          set -euo pipefail
+
+          # Check for .deployignore in repo root OR in the extracted files
+          IGNORE_FILE=""
+          if [ -f ".deployignore" ]; then
+            IGNORE_FILE=".deployignore"
+          elif [ -f "${{ env.EXTRACT_DIR }}/.deployignore" ]; then
+            IGNORE_FILE="${{ env.EXTRACT_DIR }}/.deployignore"
+          fi
+
+          if [ -n "$IGNORE_FILE" ]; then
+            echo "Found $IGNORE_FILE — applying exclusion rules."
+            while IFS= read -r pattern || [ -n "$pattern" ]; do
+              pattern=$(echo "$pattern" | sed 's/#.*//' | xargs)
+              [ -z "$pattern" ] && continue
+              find "${{ env.EXTRACT_DIR }}" -path "*/$pattern" -delete 2>/dev/null || true
+              find "${{ env.EXTRACT_DIR }}" -name "$pattern" -delete 2>/dev/null || true
+              echo "  Excluded: $pattern"
+            done < "$IGNORE_FILE"
+            # Remove the .deployignore itself from staging
+            rm -f "${{ env.EXTRACT_DIR }}/.deployignore"
+          else
+            echo "No .deployignore found — syncing all files."
+          fi
+
+      # ── 6. Sync staging → repo root ───────────────────────────────────────
+      - name: Sync Files to Repository Root
+        run: |
+          set -euo pipefail
+          echo "── Sync ($DEPLOY_MODE mode) ────────────────────────"
+
+          if [ "$DEPLOY_MODE" = "replace" ]; then
+            echo "REPLACE mode: Clearing tracked files before sync."
+            # Remove all tracked files except protected ones
+            git ls-files -z | while IFS= read -r -d '' file; do
+              case "$file" in
+                .git/*|workspace.zip|.github/workflows/deployer-pipeline.yml) continue ;;
+                *) rm -f "$file" ;;
+              esac
+            done
+          fi
+
+          # rsync overlay
+          rsync -av --progress \
+            --exclude='.git/' \
+            --exclude='workspace.zip' \
+            --exclude="${{ env.EXTRACT_DIR }}/" \
+            --exclude='.github/workflows/deployer-pipeline.yml' \
+            "${{ env.EXTRACT_DIR }}/" .
+
+          rm -rf "${{ env.EXTRACT_DIR }}"
+          echo "Staging directory removed."
+
+          rm -f "${{ env.PAYLOAD_FILE }}"
+          echo "Payload archive removed."
+
+      # ── 7. Write deployment receipt ─────────────────────────────────────────
+      - name: Write Deployment Receipt
+        run: |
+          cat > .deploy-receipt.json << EOF
+          {
+            "version": "3.0.0",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "files_extracted": ${EXTRACTED_FILES:-0},
+            "deploy_mode": "${DEPLOY_MODE:-merge}",
+            "branch": "${{ github.ref_name }}",
+            "triggered_by": "${{ github.actor }}",
+            "runner": "${{ runner.os }}"
+          }
+          EOF
+          echo "Deployment receipt written."
+
+      # ── 8. Configure Git identity ──────────────────────────────────────────
+      - name: Configure Git Identity
+        run: |
+          git config --local user.name  "${{ env.BOT_NAME }}"
+          git config --local user.email "${{ env.BOT_EMAIL }}"
+
+      # ── 9. Commit and push ─────────────────────────────────────────────────
+      - name: Commit and Push Synchronized Data
+        run: |
+          set -euo pipefail
+          echo "── Commit ──────────────────────────────────────────"
+          git add -A
+
+          if git diff-index --quiet HEAD --; then
+            echo "No structural changes detected."
+            echo "COMMITTED=false" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          STATS=$(git diff --cached --shortstat)
+          git commit -m "${{ env.COMMIT_MSG }}" -m "Stats: $STATS" -m "Mode: $DEPLOY_MODE"
+
+          SHA=$(git rev-parse HEAD)
+          echo "COMMIT_SHA=$SHA" >> $GITHUB_ENV
+          echo "COMMITTED=true"  >> $GITHUB_ENV
+          echo "Committed: $SHA"
+
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "Push succeeded on attempt $attempt."
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Push failed after 3 attempts."
+              exit 1
+            fi
+            echo "Push attempt $attempt failed — retrying in 5s…"
+            sleep 5
+          done
+
+          echo "Synchronization complete."
+
+      # ── 10. Job summary ─────────────────────────────────────────────────────
+      - name: Write Job Summary
+        if: always()
+        run: |
+          echo "## DemonZ Deployer — Sync Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${COMMITTED:-}" = "true" ]; then
+            echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Commit SHA** | \`${COMMIT_SHA:-n/a}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Files extracted** | ${EXTRACTED_FILES:-n/a} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Deploy Mode** | ${DEPLOY_MODE:-merge} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Triggered by** | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Pipeline** | v3.0.0 |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${COMMITTED:-}" = "false" ]; then
+            echo "### ℹ️ No Changes Detected" >> $GITHUB_STEP_SUMMARY
+            echo "The extracted workspace was identical. No commit was made." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "Check the step logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Forging Digital Empires — DemonZ Development*" >> $GITHUB_STEP_SUMMARY

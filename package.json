@@ -1,0 +1,16 @@
+{
+  "name": "@demonzdevelopment/demonz-deployer",
+  "version": "3.0.0",
+  "description": "Serverless GitHub deployment command center for mobile-first developers.",
+  "main": "js/app.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DemonZDevelopment/DemonZ-Deployer.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "author": "DemonZ Development",
+  "license": "MIT",
+  "keywords": ["github", "deployer", "serverless", "mobile", "ci-cd", "deployment"]
+}

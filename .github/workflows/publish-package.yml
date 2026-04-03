@@ -1,0 +1,80 @@
+name: "Master Release Engine (v3.0.0)"
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'package.json' ] # Only fires when you bump the version
+
+jobs:
+  release-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@demonzdevelopment'
+
+      - name: Generate Automatic Fix Summary
+        id: changelog
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v2.0.3")
+          SUMMARY=$(git log ${PREVIOUS_TAG}..HEAD --pretty=format:"* %s")
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          echo "$SUMMARY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build Professional Assets
+        run: |
+          mkdir -p dist
+          VERSION=$(node -p "require('./package.json').version")
+          zip -r "dist/demonz-deployer-v${VERSION}.zip" . -x "*.git*" "dist/*" ".DS_Store"
+          tar -czvf "dist/demonz-deployer-v${VERSION}.tar.gz" --exclude='.git' --exclude='dist' .
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }} — Command Center
+          body: |
+            ## 🚀 DemonZ Deployer v3.0.0 — "Command Center"
+
+            ### What's New
+            - **Deployment History & Live Actions Monitoring** — track all deploys, watch GitHub Actions in real-time
+            - **Multi-Format Upload** — drag folders, individual files, or ZIP archives
+            - **ZIP Inspector** — preview file contents before deploying
+            - **Smart Workflow File Handling** — workflow YMLs push directly via API (no PAT needed)
+            - **Custom Commit Messages & Deploy Modes** — merge or replace strategies
+            - **Branch Management** — create branches from the UI
+            - **Repository Dashboard** — stats, recent commits, quick links
+            - **Professional Sound Design** — Aternos-style audio feedback
+            - **Command Palette** — Ctrl+K for quick actions
+            - **Enhanced Pipeline** — deploy modes, .deployignore, rollback, deployment receipts
+            - **Smart Pipeline Version Detection** — auto-detects outdated pipelines with upgrade prompt
+            - **Toast Notifications & Browser Alerts** — deploy and walk away
+
+            ### Changelog
+            ${{ steps.changelog.outputs.summary }}
+
+            ---
+            *Forging Digital Empires — DemonZ Development*
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

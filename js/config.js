@@ -37,7 +37,7 @@ const CONFIG = Object.freeze({
   // The deployer-pipeline.yml contains a tag like:
   //   # DZ_PIPELINE_VERSION=3.0.0
   // This is used to detect outdated pipelines in user repos.
-  PIPELINE_VERSION:     '3.0.0',
+  PIPELINE_VERSION:     '3.0.1',
   PIPELINE_VERSION_TAG: 'DZ_PIPELINE_VERSION',
 
   // ── Defaults ───────────────────────────────────────────────

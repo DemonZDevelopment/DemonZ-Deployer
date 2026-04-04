@@ -75,7 +75,7 @@ const API = (() => {
 
     // ── Branches ──
     listBranches: (repo) =>
-      request('GET', `/repos/${repo}/branches?per_page=100`),
+      requestAllPages(`/repos/${repo}/branches`),
 
     getBranchDetails: (repo, branch) =>
       request('GET', `/repos/${repo}/branches/${encodeURIComponent(branch)}`),

@@ -22,7 +22,7 @@
 
 const CONFIG = Object.freeze({
   // ── App version ────────────────────────────────────────────
-  VERSION: '3.0.0',
+  VERSION: '3.0.1',
 
   // ── Required — fill these in ───────────────────────────────
   CLIENT_ID:  'Ov23liFAyEj9YNz0XrRN',

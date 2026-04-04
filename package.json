@@ -1,6 +1,6 @@
 {
   "name": "@demonzdevelopment/demonz-deployer",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Serverless GitHub deployment command center for mobile-first developers.",
   "main": "js/app.js",
   "repository": {

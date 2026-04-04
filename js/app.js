@@ -664,7 +664,7 @@ const App = (() => {
   }
 
   function _readEntry(entry, basePath, files) {
-    return new Promise(resolve => {
+    return new Promise(async resolve => {
       if (entry.isFile) {
         entry.file(file => {
           files.push({ path: basePath + entry.name, file });
@@ -672,12 +672,17 @@ const App = (() => {
         }, resolve);
       } else if (entry.isDirectory) {
         const reader = entry.createReader();
-        reader.readEntries(async entries => {
-          for (const e of entries) {
-            await _readEntry(e, basePath + entry.name + '/', files);
-          }
-          resolve();
-        }, resolve);
+        const readBatch = () => new Promise((res, rej) => reader.readEntries(res, rej));
+        const allEntries = [];
+        let batch;
+        do {
+          batch = await readBatch();
+          allEntries.push(...batch);
+        } while (batch.length > 0);
+        for (const e of allEntries) {
+          await _readEntry(e, basePath + entry.name + '/', files);
+        }
+        resolve();
       } else {
         resolve();
       }
@@ -686,6 +691,17 @@ const App = (() => {
 
   async function _stageFile(displayFile, uploadBlob, displayName, displaySize) {
     const sizeMB = displaySize / 1_048_576;
+    if (sizeMB > 90) {
+      D.dropzone.className = 'dropzone file-err';
+      state.selectedFile = null;
+      state.selectedFileBlob = null;
+      D.dzFileName.textContent = '';
+      D.dzFileMeta.textContent = '';
+      Terminal.log(`Rejected: ${sizeMB.toFixed(1)} MB exceeds the 90 MB limit (GitHub Contents API max is 100 MB). Split your workspace into smaller archives.`, 'error', 'er');
+      Notify.toast('File too large — 90 MB maximum', 'error');
+      _checkReady();
+      return;
+    }
     if (sizeMB > 50) {
       Terminal.log(`Warning: ${sizeMB.toFixed(1)} MB — large files may be slow or fail.`, 'warn', 'wn');
     }

@@ -11,6 +11,11 @@
  *  3. Set ALLOWED_ORIGINS below to your GitHub Pages URL
  *  4. In Worker Settings → Variables → Secret, add a variable named CLIENT_SECRET
  *     and paste your GitHub OAuth App's client secret as the value
+ *  4b. In Worker Settings → Variables → KV Namespace Bindings, create a binding
+ *     named RATE_LIMIT bound to a KV namespace. Without this, rate limiting uses
+ *     a per-instance in-memory Map and will not enforce limits across Worker
+ *     instances in production. The KV binding enables persistent cross-instance
+ *     rate limiting at no extra code cost (the Worker already supports it).
  *  5. Click Save & Deploy
  *  6. Copy the *.workers.dev URL into CONFIG.PROXY_URL in js/config.js
  *
@@ -164,6 +169,11 @@ async function handleRequest(request, env) {
     !payload.client_id  || typeof payload.client_id !== 'string' || payload.client_id.length > 128
   ) {
     return reply('{"error":"Missing or invalid \\"code\\" or \\"client_id\\" field"}', 400, origin);
+  }
+
+  const EXPECTED_CLIENT_ID = 'Ov23liFAyEj9YNz0XrRN';
+  if (payload.client_id !== EXPECTED_CLIENT_ID) {
+    return reply('{"error":"Invalid client_id"}', 400, origin);
   }
 
   try {

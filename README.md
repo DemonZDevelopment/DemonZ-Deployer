@@ -1,7 +1,7 @@
-# DemonZ Deployer v3.0.0 — Command Center
+# DemonZ Deployer v3.0.1 — Command Center
 
 <p align="center">
-  <img src="assets/deployer.jpg" alt="DemonZ Deployer Banner" style="border-radius: 12px; max-width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.5);" />
+  <img src="assets/banner.png" alt="DemonZ Deployer Banner" style="border-radius: 12px; max-width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.5);" />
 </p>
 
 > **Serverless GitHub deployment command center for mobile-first developers.**
@@ -9,7 +9,7 @@
 
 ---
 
-## ✨ What's New in v3.0.0
+## ✨ What's New in v3.0.1
 
 | Feature | Description |
 |:---|:---|
@@ -62,7 +62,7 @@
 
 ### Smart Workflow File Handling
 
-GitHub Actions' `GITHUB_TOKEN` cannot write to `.github/workflows/*.yml`. DemonZ Deployer v3.0.0 solves this transparently:
+GitHub Actions' `GITHUB_TOKEN` cannot write to `.github/workflows/*.yml`. DemonZ Deployer v3.0.1 solves this transparently:
 
 1. JSZip inspects the uploaded zip client-side
 2. Detects any `.github/workflows/*.yml` files

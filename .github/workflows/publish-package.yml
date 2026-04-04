@@ -1,4 +1,4 @@
-name: "Master Release Engine (v3.0.0)"
+name: "Master Release Engine (v3.0.1)"
 
 on:
   push:
@@ -47,21 +47,14 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }} — Command Center
           body: |
-            ## 🚀 DemonZ Deployer v3.0.0 — "Command Center"
+            ## 🚀 DemonZ Deployer v${{ env.VERSION }} — "Command Center"
 
-            ### What's New
-            - **Deployment History & Live Actions Monitoring** — track all deploys, watch GitHub Actions in real-time
-            - **Multi-Format Upload** — drag folders, individual files, or ZIP archives
-            - **ZIP Inspector** — preview file contents before deploying
-            - **Smart Workflow File Handling** — workflow YMLs push directly via API (no PAT needed)
-            - **Custom Commit Messages & Deploy Modes** — merge or replace strategies
-            - **Branch Management** — create branches from the UI
-            - **Repository Dashboard** — stats, recent commits, quick links
-            - **Professional Sound Design** — Aternos-style audio feedback
-            - **Command Palette** — Ctrl+K for quick actions
-            - **Enhanced Pipeline** — deploy modes, .deployignore, rollback, deployment receipts
-            - **Smart Pipeline Version Detection** — auto-detects outdated pipelines with upgrade prompt
-            - **Toast Notifications & Browser Alerts** — deploy and walk away
+            ### Patch Fixes (v3.0.1)
+            - **readEntries truncation fix** — dropped folders with 100+ files are now fully read (looping readEntries)
+            - **Worker client_id validation** — the Cloudflare Worker now rejects requests with an unexpected client_id
+            - **KV namespace documentation** — deploy instructions document the optional RATE_LIMIT KV binding for persistent cross-instance rate limiting
+            - **90 MB upload hard limit** — files exceeding 90 MB are rejected before encoding (GitHub Contents API max is 100 MB)
+            - **listBranches pagination** — repos with 100+ branches are now fully loaded via paginated fetch
 
             ### Changelog
             ${{ steps.changelog.outputs.summary }}

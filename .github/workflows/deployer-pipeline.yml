@@ -1,10 +1,16 @@
-# DZ_PIPELINE_VERSION=3.0.0
+# DZ_PIPELINE_VERSION=3.0.1
 name: DemonZ Workspace Deployment Pipeline
 
 # ═════════════════════════════════════════════════════════════════════════════
-# DemonZ Deployer — Pipeline v3.0.0 "Command Center"  |  2026-04-03
+# DemonZ Deployer — Pipeline v3.0.1 "Command Center"  |  2026-04-05
 # ─────────────────────────────────────────────────────────────────────────────
 # Changelog:
+#   v3.0.1 — Exclude entire .github/workflows/ from rsync.
+#             Workflow files are pre-pushed by the browser client via the
+#             GitHub Contents API (OAuth token with workflow scope) before
+#             the workspace.zip upload. The pipeline must not re-stage them
+#             or the GITHUB_TOKEN push will be rejected (no workflow permission).
+#             Replace mode protection updated to cover all workflow files.
 #   v3.0.0 — Deploy mode support (merge/replace) via commit message metadata.
 #             .deployignore file support for excluding files during sync.
 #             Deployment receipt (.deploy-receipt.json) written after sync.
@@ -251,21 +257,28 @@ jobs:
 
           if [ "$DEPLOY_MODE" = "replace" ]; then
             echo "REPLACE mode: Clearing tracked files before sync."
-            # Remove all tracked files except protected ones
+            # Remove all tracked files except protected ones.
+            # .github/workflows/* is protected — workflow files are managed
+            # exclusively by the browser client's pre-push mechanism.
             git ls-files -z | while IFS= read -r -d '' file; do
               case "$file" in
-                .git/*|workspace.zip|.github/workflows/deployer-pipeline.yml) continue ;;
+                .git/*|workspace.zip|.github/workflows/*) continue ;;
                 *) rm -f "$file" ;;
               esac
             done
           fi
 
-          # rsync overlay
+          # rsync overlay.
+          # .github/workflows/ is excluded entirely — the browser client
+          # pre-pushes all workflow files directly via the GitHub Contents API
+          # using an OAuth token with workflow scope, before uploading
+          # workspace.zip. The GITHUB_TOKEN used here does not have workflow
+          # permission and cannot push changes to .github/workflows/.
           rsync -av --progress \
             --exclude='.git/' \
             --exclude='workspace.zip' \
             --exclude="${{ env.EXTRACT_DIR }}/" \
-            --exclude='.github/workflows/deployer-pipeline.yml' \
+            --exclude='.github/workflows/' \
             "${{ env.EXTRACT_DIR }}/" .
 
           rm -rf "${{ env.EXTRACT_DIR }}"
@@ -274,12 +287,12 @@ jobs:
           rm -f "${{ env.PAYLOAD_FILE }}"
           echo "Payload archive removed."
 
-      # ── 7. Write deployment receipt ─────────────────────────────────────────
+      # ── 7. Write deployment receipt ────────────────────────────────────────
       - name: Write Deployment Receipt
         run: |
           cat > .deploy-receipt.json << EOF
           {
-            "version": "3.0.0",
+            "version": "3.0.1",
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "files_extracted": ${EXTRACTED_FILES:-0},
             "deploy_mode": "${DEPLOY_MODE:-merge}",
@@ -332,7 +345,7 @@ jobs:
 
           echo "Synchronization complete."
 
-      # ── 10. Job summary ─────────────────────────────────────────────────────
+      # ── 10. Job summary ────────────────────────────────────────────────────
       - name: Write Job Summary
         if: always()
         run: |
@@ -349,7 +362,7 @@ jobs:
             echo "| **Deploy Mode** | ${DEPLOY_MODE:-merge} |" >> $GITHUB_STEP_SUMMARY
             echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
             echo "| **Triggered by** | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
-            echo "| **Pipeline** | v3.0.0 |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Pipeline** | v3.0.1 |" >> $GITHUB_STEP_SUMMARY
           elif [ "${COMMITTED:-}" = "false" ]; then
             echo "### ℹ️ No Changes Detected" >> $GITHUB_STEP_SUMMARY
             echo "The extracted workspace was identical. No commit was made." >> $GITHUB_STEP_SUMMARY

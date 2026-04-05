@@ -279,7 +279,7 @@ jobs:
             --exclude='.git/' \
             --exclude='workspace.zip' \
             --exclude="${{ env.EXTRACT_DIR }}/" \
-            --exclude='.github/workflows/deployer-pipeline.yml' \
+            --exclude='.github/workflows/' \
             "${{ env.EXTRACT_DIR }}/" .
           
           rm -rf "${{ env.EXTRACT_DIR }}"

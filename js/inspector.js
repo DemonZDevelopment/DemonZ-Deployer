@@ -16,27 +16,29 @@ const Inspector = (() => {
   function _getSingleRoot(zipFiles) {
     const topLevelEntries = new Set();
     Object.keys(zipFiles).forEach(path => {
-      const topLevel = path.split('/')[0];
-      if (topLevel) topLevelEntries.add(topLevel);
+      const parts = path.split('/');
+      // If it has a slash, it's in a folder. If no slash, check if it's a file.
+      if (parts.length > 1) {
+        topLevelEntries.add(parts[0]);
+      } else if (!zipFiles[path].dir) {
+        topLevelEntries.add('__ROOT_FILE__');
+      }
     });
     
-    if (topLevelEntries.size === 1) {
+    if (topLevelEntries.size === 1 && !topLevelEntries.has('__ROOT_FILE__')) {
       const root = Array.from(topLevelEntries)[0];
-      // Ensure it's actually a directory
-      if (zipFiles[root + '/']) return root + '/';
+      // CRITICAL FIX: Never flatten the .github directory!
+      if (root.toLowerCase() === '.github') return null;
+      return root + '/';
     }
     return null;
   }
 
   /**
    * Inspect a ZIP file and return its contents analysis.
-   * @param {File|Blob} file
-   * @returns {Promise<InspectResult>}
    */
   async function inspect(file) {
-    if (typeof JSZip === 'undefined') {
-      throw new Error('JSZip library not loaded. Check your CDN link.');
-    }
+    if (typeof JSZip === 'undefined') throw new Error('JSZip library not loaded.');
 
     const zip = await JSZip.loadAsync(file).catch(err => {
       throw new Error(`Failed to read ZIP: ${err.message}`);
@@ -54,7 +56,6 @@ const Inspector = (() => {
       const size = entry._data?.uncompressedSize || 0;
       totalSize += size;
 
-      // Adjust path if the backend will flatten it
       let actualPath = relativePath;
       if (rootToFlatten && actualPath.startsWith(rootToFlatten)) {
         actualPath = actualPath.substring(rootToFlatten.length);
@@ -64,14 +65,13 @@ const Inspector = (() => {
         path: actualPath,
         name: actualPath.split('/').pop(),
         size,
-        isWorkflow: /^\.github\/workflows\/.*\.ya?ml$/i.test(actualPath),
+        isWorkflow: /(?:^|\/)\.github\/workflows\/.*\.ya?ml$/i.test(actualPath),
       };
 
       files.push(info);
       if (info.isWorkflow) workflowFiles.push(info);
     });
 
-    // Sort by path
     files.sort((a, b) => a.path.localeCompare(b.path));
 
     return {
@@ -87,9 +87,7 @@ const Inspector = (() => {
    * Create a ZIP blob from a FileList (single or multiple files).
    */
   async function createZipFromFiles(fileList) {
-    if (typeof JSZip === 'undefined') {
-      throw new Error('JSZip library not loaded.');
-    }
+    if (typeof JSZip === 'undefined') throw new Error('JSZip library not loaded.');
 
     const zip = new JSZip();
     for (const file of fileList) {
@@ -103,16 +101,19 @@ const Inspector = (() => {
    * Create a ZIP blob from folder entries (from webkitdirectory input).
    */
   async function createZipFromFolder(fileList) {
-    if (typeof JSZip === 'undefined') {
-      throw new Error('JSZip library not loaded.');
-    }
+    if (typeof JSZip === 'undefined') throw new Error('JSZip library not loaded.');
 
     const zip = new JSZip();
     for (const file of fileList) {
       const path = file.webkitRelativePath || file.name;
-      // Remove the root folder name to flatten
       const parts = path.split('/');
-      const relativePath = parts.length > 1 ? parts.slice(1).join('/') : path;
+      let relativePath = path;
+      
+      // CRITICAL FIX: Only flatten if the root folder is NOT .github
+      if (parts.length > 1 && parts[0].toLowerCase() !== '.github') {
+        relativePath = parts.slice(1).join('/');
+      }
+      
       const data = await file.arrayBuffer();
       zip.file(relativePath, data);
     }
@@ -121,12 +122,9 @@ const Inspector = (() => {
 
   /**
    * Extract workflow file contents from a ZIP for direct API push.
-   * Returns an array of { path, contentBase64 } objects.
    */
   async function extractWorkflowFiles(file) {
-    if (typeof JSZip === 'undefined') {
-      throw new Error('JSZip library not loaded.');
-    }
+    if (typeof JSZip === 'undefined') throw new Error('JSZip library not loaded.');
 
     const zip = await JSZip.loadAsync(file);
     const results = [];
@@ -135,13 +133,12 @@ const Inspector = (() => {
     for (const [path, entry] of Object.entries(zip.files)) {
       if (entry.dir) continue;
       
-      // Adjust path if the backend will flatten it
       let actualPath = path;
       if (rootToFlatten && actualPath.startsWith(rootToFlatten)) {
         actualPath = actualPath.substring(rootToFlatten.length);
       }
 
-      if (/^\.github\/workflows\/.*\.ya?ml$/i.test(actualPath)) {
+      if (/(?:^|\/)\.github\/workflows\/.*\.ya?ml$/i.test(actualPath)) {
         const content = await entry.async('base64');
         results.push({ path: actualPath, contentBase64: content });
       }
@@ -161,14 +158,12 @@ const Inspector = (() => {
       return;
     }
 
-    // Build a tree structure
     const tree = {};
     result.files.forEach(f => {
       const parts = f.path.split('/');
       let node = tree;
       parts.forEach((part, i) => {
         if (i === parts.length - 1) {
-          // File leaf
           if (!node.__files) node.__files = [];
           node.__files.push(f);
         } else {
@@ -178,7 +173,6 @@ const Inspector = (() => {
       });
     });
 
-    // Stats bar
     const statsHtml = `
       <div class="inspector-stats">
         <span class="inspector-stat"><i data-lucide="file" class="inspector-stat-icon"></i>${result.fileCount} files</span>
@@ -189,14 +183,12 @@ const Inspector = (() => {
       </div>
     `;
 
-    // Render the file tree
     const treeHtml = _renderNode(tree, '');
 
     container.innerHTML = statsHtml + `<div class="inspector-tree">${treeHtml}</div>`;
 
     if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [container] });
 
-    // Bind collapsible folders
     container.querySelectorAll('.inspector-folder-toggle').forEach(btn => {
       btn.addEventListener('click', () => {
         const parent = btn.closest('.inspector-folder');
@@ -208,7 +200,6 @@ const Inspector = (() => {
   function _renderNode(node, prefix) {
     let html = '';
 
-    // Render directories first
     const dirs = Object.keys(node).filter(k => k !== '__files').sort();
     dirs.forEach(dir => {
       const childCount = _countFiles(node[dir]);
@@ -227,7 +218,6 @@ const Inspector = (() => {
       `;
     });
 
-    // Render files
     const files = node.__files || [];
     files.forEach(f => {
       const sizeClass = f.size > 10_000_000 ? 'size-danger' :

@@ -2,9 +2,9 @@
  * DemonZ Deployer — ZIP Inspector & Multi-Format Upload (v3.0.0)
  *
  * Uses JSZip (CDN) to:
- *   - Inspect ZIP contents before deploy
- *   - Create ZIPs from folders or individual files
- *   - Detect workflow files for smart pre-push
+ * - Inspect ZIP contents before deploy
+ * - Create ZIPs from folders or individual files
+ * - Detect workflow files for smart pre-push
  */
 
 const Inspector = (() => {
@@ -37,7 +37,8 @@ const Inspector = (() => {
         path: relativePath,
         name: relativePath.split('/').pop(),
         size,
-        isWorkflow: /^\.github\/workflows\/.*\.ya?ml$/i.test(relativePath),
+        // FIX: Removed strict start anchor (^) to allow root folders
+        isWorkflow: /(?:^|\/)\.github\/workflows\/.*\.ya?ml$/i.test(relativePath),
       };
 
       files.push(info);
@@ -106,7 +107,8 @@ const Inspector = (() => {
 
     for (const [path, entry] of Object.entries(zip.files)) {
       if (entry.dir) continue;
-      if (/^\.github\/workflows\/.*\.ya?ml$/i.test(path)) {
+      // FIX: Removed strict start anchor (^) to allow root folders
+      if (/(?:^|\/)\.github\/workflows\/.*\.ya?ml$/i.test(path)) {
         const content = await entry.async('base64');
         results.push({ path, contentBase64: content });
       }

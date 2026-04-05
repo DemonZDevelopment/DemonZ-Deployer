@@ -6,16 +6,16 @@ name: DemonZ Workspace Deployment Pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 # Changelog:
 #   v3.0.1 — Exclude entire .github/workflows/ from rsync.
-#             Workflow files are pre-pushed by the browser client via the
-#             GitHub Contents API (OAuth token with workflow scope) before
-#             the workspace.zip upload. The pipeline must not re-stage them
-#             or the GITHUB_TOKEN push will be rejected (no workflow permission).
-#             Replace mode protection updated to cover all workflow files.
+#            Workflow files are pre-pushed by the browser client via the
+#            GitHub Contents API (OAuth token with workflow scope) before
+#            the workspace.zip upload. The pipeline must not re-stage them
+#            or the GITHUB_TOKEN push will be rejected (no workflow permission).
+#            Replace mode protection updated to cover all workflow files.
 #   v3.0.0 — Deploy mode support (merge/replace) via commit message metadata.
-#             .deployignore file support for excluding files during sync.
-#             Deployment receipt (.deploy-receipt.json) written after sync.
-#             workflow_dispatch trigger for manual rollback.
-#             Machine-readable version tag for smart client-side detection.
+#            .deployignore file support for excluding files during sync.
+#            Deployment receipt (.deploy-receipt.json) written after sync.
+#            workflow_dispatch trigger for manual rollback.
+#            Machine-readable version tag for smart client-side detection.
 #   v2.0.3 — Concurrency guard, stat-based size check, self-protection.
 #   v2.0.2 — Initial professional rewrite.
 # ═════════════════════════════════════════════════════════════════════════════
@@ -43,6 +43,7 @@ on:
 
 permissions:
   contents: write
+  workflows: write
 
 env:
   PAYLOAD_FILE: 'workspace.zip'
@@ -278,9 +279,9 @@ jobs:
             --exclude='.git/' \
             --exclude='workspace.zip' \
             --exclude="${{ env.EXTRACT_DIR }}/" \
-            --exclude='.github/workflows/' \
+            --exclude='.github/workflows/deployer-pipeline.yml' \
             "${{ env.EXTRACT_DIR }}/" .
-
+          
           rm -rf "${{ env.EXTRACT_DIR }}"
           echo "Staging directory removed."
 

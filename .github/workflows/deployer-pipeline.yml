@@ -43,7 +43,6 @@ on:
 
 permissions:
   contents: write
-  workflows: write
 
 env:
   PAYLOAD_FILE: 'workspace.zip'
@@ -240,8 +239,9 @@ jobs:
             while IFS= read -r pattern || [ -n "$pattern" ]; do
               pattern=$(echo "$pattern" | sed 's/#.*//' | xargs)
               [ -z "$pattern" ] && continue
-              find "${{ env.EXTRACT_DIR }}" -path "*/$pattern" -delete 2>/dev/null || true
-              find "${{ env.EXTRACT_DIR }}" -name "$pattern" -delete 2>/dev/null || true
+              # Safely forcefully remove any files OR folders matching the pattern
+              find "${{ env.EXTRACT_DIR }}" -name "$pattern" -exec rm -rf {} + 2>/dev/null || true
+              find "${{ env.EXTRACT_DIR }}" -path "*/$pattern" -exec rm -rf {} + 2>/dev/null || true
               echo "  Excluded: $pattern"
             done < "$IGNORE_FILE"
             # Remove the .deployignore itself from staging

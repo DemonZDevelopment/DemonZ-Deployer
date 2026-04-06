@@ -389,6 +389,7 @@ const App = (() => {
 
   async function _selectRepo(repo) {
     state.selectedRepo    = repo.full_name;
+    state.workflowInstalled = false;
     state.selectedRepoObj = repo;
     D.repoSearch.value    = repo.full_name;
     _hideDropdown();
@@ -500,6 +501,7 @@ const App = (() => {
     } finally {
       D.setupRepoBtn.disabled = !state.selectedRepo;
       lucide.createIcons();
+      _checkReady();
     }
   }
 
@@ -523,6 +525,7 @@ const App = (() => {
       D.setupRepoBtn.innerHTML = '<i data-lucide="refresh-cw"></i> Reinstall';
       Notify.toast('Pipeline installed successfully', 'success');
       Notify.playPing();
+      _checkReady();
       lucide.createIcons();
     } catch (err) {
       Terminal.log(`Workflow install failed: ${err.message}`, 'error', 'er');
@@ -734,7 +737,12 @@ const App = (() => {
 
   /* ════════════════════════════ DEPLOY ══ */
   function _checkReady() {
-    D.deployBtn.disabled = !(state.selectedRepo && state.selectedFileBlob && !state.isDeploying);
+    D.deployBtn.disabled = !(
+      state.selectedRepo && 
+      state.selectedFileBlob && 
+      !state.isDeploying && 
+      state.workflowInstalled
+    );
   }
 
   async function _runDeploy() {

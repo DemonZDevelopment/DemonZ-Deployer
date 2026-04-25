@@ -1,7 +1,7 @@
 # DemonZ Deployer v3.0.1 — Command Center
 
 <p align="center">
-  <img src="assets/banner.png" alt="DemonZ Deployer Banner" style="border-radius: 12px; max-width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.5);" />
+  <img src="assets/deployer.jpg" alt="DemonZ Deployer Banner" style="border-radius: 12px; max-width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.5);" />
 </p>
 
 > **Serverless GitHub deployment command center for mobile-first developers.**
